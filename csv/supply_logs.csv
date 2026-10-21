@@ -1,0 +1,9 @@
+id,date,customerId,customerName,customerType,route,quantityLiters,unitPrice,totalAmount,deliveryStatus,paymentStatus,deliveredAt,bottlesReturned,notes
+del-101,2026-10-02,cust-1,Pinecrest Artisan Bakery,Commercial / Cafe,Commercial Central Route,25,2.1,52.5,Delivered,Added to Ledger,06:15 AM,12,Delivered in chilled stainless canisters.
+del-102,2026-10-02,cust-2,Dr. Rebecca Chen,Household,North Ridge Residential,3,2.5,7.5,Delivered,Paid,06:40 AM,3,Left in porch cooler with ice packs.
+del-103,2026-10-02,cust-3,Valley Green Farm Stand & Deli,Retail Store,South Valley Highway Route,35,1.95,68.25,Delivered,Added to Ledger,07:10 AM,18,Retail display crates accepted.
+del-104,2026-10-02,cust-4,Mr. Arthur Davies,Household,Town Center Domestic,2,2.2,4.4,Delivered,Added to Ledger,07:35 AM,2,
+del-105,2026-10-02,cust-5,The Roasted Bean Espresso Bar,Commercial / Cafe,Commercial Central Route,18,2.1,37.8,Pending,Added to Ledger,,0,Scheduled for 08:30 AM drop-off before morning rush.
+del-106,2026-10-02,cust-6,Golden Spoon Sweet Confectionery,Commercial / Cafe,Town Center Domestic,30,2.6,78,Pending,Added to Ledger,,0,Requested high fat bulk batch for daily sweets preparation.
+del-107,2026-10-02,cust-7,Sarah & Mark Thornton,Household,North Ridge Residential,2.5,2.5,6.25,Delivered,Paid,06:55 AM,2,
+del-108,2026-10-02,cust-8,Crestview Dairy Cooperative Hub,Dairy Co-op,South Valley Highway Route,60,1.85,111,Pending,Added to Ledger,,0,Tanker transfer at 10:00 AM dispatch.

@@ -1,0 +1,10 @@
+collection,file,rows,columns
+cattle,cattle.csv,10,21
+milk_logs,milk_logs.csv,13,12
+customers,customers.csv,8,13
+supply_logs,supply_logs.csv,8,14
+invoices,invoices.csv,4,11
+vaccines,vaccines.csv,5,14
+storage_tanks,storage_tanks.csv,2,8
+feed_inventory,feed_inventory.csv,4,8
+expenses,expenses.csv,8,9

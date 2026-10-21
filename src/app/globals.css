@@ -1,0 +1,34 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: var(--font-jakarta);
+  --font-mono: var(--font-jetbrains);
+}
+
+@layer base {
+  body {
+    font-family: var(--font-jakarta), system-ui, -apple-system, sans-serif;
+  }
+
+  .font-mono,
+  .tabular-nums {
+    font-family: var(--font-jetbrains), monospace;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Custom subtle scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+}

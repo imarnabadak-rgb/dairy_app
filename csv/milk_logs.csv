@@ -1,0 +1,14 @@
+id,date,session,cowId,cowTag,liters,fatPercentage,snfPercentage,qualityStatus,isWithheld,milkerName,notes
+ml-01,2026-10-02,Morning,c1,DF-101,15.2,4.15,8.85,Optimal,false,Marcus Evans,
+ml-02,2026-10-02,Morning,c2,DF-102,11.8,5.42,9.1,Optimal,false,Marcus Evans,
+ml-03,2026-10-02,Morning,c3,DF-103,12.5,3.8,8.5,Discarded,true,Marcus Evans,Discarded due to antibiotic withdrawal protocol.
+ml-04,2026-10-02,Morning,c4,DF-104,9.5,4.6,8.95,Optimal,false,Sanjay Kumar,
+ml-05,2026-10-02,Morning,c6,DF-106,16.4,4.05,8.78,Optimal,false,Marcus Evans,
+ml-06,2026-10-02,Morning,c7,DF-107,8.8,4.8,9.02,Optimal,false,Sanjay Kumar,
+ml-07,2026-10-02,Morning,c8,DF-108,11,4.22,8.8,Standard,false,Marcus Evans,
+ml-08,2026-10-01,Evening,c1,DF-101,13.5,4.2,8.9,Optimal,false,Marcus Evans,
+ml-09,2026-10-01,Evening,c2,DF-102,10.4,5.5,9.15,Optimal,false,Marcus Evans,
+ml-10,2026-10-01,Evening,c4,DF-104,9,4.65,8.98,Optimal,false,Sanjay Kumar,
+ml-11,2026-10-01,Evening,c6,DF-106,14.8,4.1,8.82,Optimal,false,Marcus Evans,
+ml-12,2026-10-01,Evening,c7,DF-107,7.9,4.85,9.05,Optimal,false,Sanjay Kumar,
+ml-13,2026-10-01,Evening,c8,DF-108,10.2,4.25,8.84,Standard,false,Marcus Evans,
