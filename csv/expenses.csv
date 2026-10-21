@@ -1,9 +1,0 @@
-id,date,title,category,amount,vendor,paymentMethod,receiptNumber,notes
-exp-1,2026-10-02,"Corn Silage Truckload Delivery (1,500 kg)",Feed & Fodder,270,Midwest Agricultural Co-op,Bank Transfer,REC-FEED-9921,Bulk bunker top-up for dairy herd winter rations.
-exp-2,2026-10-02,FMD Trivalent Vaccines & Syringe Consumables,Veterinary & Vaccines,145,VetCare BioSciences & Supplies,Card / UPI,VET-INV-4418,Doses for herd bi-annual vaccination drive.
-exp-3,2026-10-01,Daily Milking & Barn Sanitation Crew Wages,Labor & Milking Staff,120,Farm Operational Staff Payroll,Bank Transfer,PAY-2026-1001,Morning and evening milking shifts (2 operators).
-exp-4,2026-10-01,Bulk Chilling Silo & Refrigeration Electricity Utility,Electricity & Cold Storage,85.5,Rural Electric Cooperative,Bank Transfer,ELEC-SEPT-889,Power grid allocation for 24/7 chilling compressor tanks.
-exp-5,2026-09-30,High-Protein 22% Dairy Pellets (500 kg),Feed & Fodder,240,NutriFeed Mills,Bank Transfer,REC-FEED-8874,Lactation performance feed concentrate.
-exp-6,2026-09-29,Veterinarian Routine Health Check & Mastitis Care,Veterinary & Vaccines,95,"Dr. James Harland, DVM",Card / UPI,VET-VISIT-0929,Clinical exam on DF-103 and herd pregnancy checks.
-exp-7,2026-09-28,Tractor Diesel Fuel (80 Liters),Fuel & Equipment,112,County Petroleum Depot,Card / UPI,FUEL-9932,Silage mixing and feed bunk distribution tractor.
-exp-8,2026-09-27,Food-Grade Teat Dip & CIP Pipe Detergents,Farm Misc & Supplies,68,DairySan Technologies,Card / UPI,SAN-5521,Iodine post-milking barrier teat dip & acidic wash.

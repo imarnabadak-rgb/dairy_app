@@ -1,6 +1,0 @@
-id,vaccineName,targetType,cattleId,cattleTag,administeredDate,nextDueDate,veterinarian,batchLot,dosageMl,status,requiresMilkWithdrawal,withdrawalDays,notes
-vac-1,Foot & Mouth Disease (FMD) Bi-Annual,Herd-Wide,,HERD-ALL (10 cattle),2026-04-10,2026-10-10,"Dr. James Harland, DVM",FMD-TRI-9921,3,Scheduled,false,0,Bi-annual herd vaccination scheduled with County Vet Officer in 8 days.
-vac-2,Brucellosis S19 Strain,Individual,c10,DF-110 (Penny),2025-07-15,2026-12-01,"Dr. James Harland, DVM",BRUC-CALF-441,2,Completed,false,0,Calfhood immunity established. Tattoo verified.
-vac-3,Hemorrhagic Septicemia & Black Quarter (HS+BQ),Herd-Wide,,HERD-ALL,2026-05-18,2027-05-18,"Dr. James Harland, DVM",HSBQ-COMB-2026,5,Completed,false,0,Monsoon season booster completed with zero adverse reactions.
-vac-4,Broad-Spectrum Deworming (Albendazole 10%),Herd-Wide,,HERD-ALL,2026-09-01,2026-12-01,Sanjay Kumar (Farm Vet Tech),ALB-ORAL-773,30,Completed,true,3,Routine quarterly drenching completed.
-vac-5,Intramammary Antibiotic Infusion,Individual,c3,DF-103 (Ruby),2026-10-01,2026-10-05,"Dr. James Harland, DVM",CEPH-IMM-552,10,Scheduled,true,4,WITHDRAWAL ACTIVE: 4 days withholding. Milk to be checked for antibiotic residue before release.

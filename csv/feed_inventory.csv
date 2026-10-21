@@ -1,5 +1,0 @@
-id,name,category,stockKg,dailyBurnKg,minThresholdKg,costPerKg,supplier
-feed-1,Fermented Corn Silage,Forage / Silage,4200,180,1000,0.18,Midwest Agricultural Co-op
-feed-2,22% Protein Dairy Pellets,Grain / Concentrate,1650,65,400,0.48,NutriFeed Mills
-feed-3,Green Rhodes Grass & Lucerne,Forage / Silage,3100,150,800,0.14,Farm Pasture Section C
-feed-4,Chelated Mineral & Vitamin Premix,Mineral / Supplement,120,2.2,30,2.8,VetCare BioSciences

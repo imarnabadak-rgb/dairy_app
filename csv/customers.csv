@@ -1,9 +1,0 @@
-id,name,phone,email,customerType,address,route,dailyQuotaLiters,milkType,unitPrice,balanceDue,preferredSession,status
-cust-1,Pinecrest Artisan Bakery,+1 (555) 234-8901,orders@pinecrestbakery.com,Commercial / Cafe,"42 Market Square, Old Town",Commercial Central Route,25,Whole Cow Milk,2.1,185,Morning,Active
-cust-2,Dr. Rebecca Chen,+1 (555) 782-4419,,Household,"108 Oakwood Heights, Apt 4B",North Ridge Residential,3,A2 Desi Milk,2.5,0,Morning,Active
-cust-3,Valley Green Farm Stand & Deli,+1 (555) 901-2244,deli@valleygreen.org,Retail Store,880 County Road 14,South Valley Highway Route,35,Whole Cow Milk,1.95,450.5,Morning,Active
-cust-4,Mr. Arthur Davies,+1 (555) 345-6712,,Household,"15 Elm Street, Meadowview",Town Center Domestic,2,Whole Cow Milk,2.2,26.4,Morning,Active
-cust-5,The Roasted Bean Espresso Bar,+1 (555) 456-9923,,Commercial / Cafe,73 Willow Boulevard,Commercial Central Route,18,Whole Cow Milk,2.1,94.5,Morning,Active
-cust-6,Golden Spoon Sweet Confectionery,+1 (555) 678-1120,,Commercial / Cafe,12 Heritage Bazaar,Town Center Domestic,30,Buffalo / High Fat,2.6,390,Morning,Active
-cust-7,Sarah & Mark Thornton,+1 (555) 890-5544,,Household,24 Orchard Way,North Ridge Residential,2.5,A2 Desi Milk,2.5,15,Morning,Active
-cust-8,Crestview Dairy Cooperative Hub,+1 (555) 998-3301,,Dairy Co-op,"Silo Terminal B, Dairy Way",South Valley Highway Route,60,Whole Cow Milk,1.85,777,Morning,Active

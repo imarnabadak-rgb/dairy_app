@@ -1,5 +1,0 @@
-id,customerId,customerName,billingMonth,totalLiters,ratePerLiter,totalAmount,paidAmount,status,issueDate,dueDate
-INV-2026-091,cust-1,Pinecrest Artisan Bakery,September 2026,750,2.1,1575,1390,Partially Paid,2026-10-01,2026-10-15
-INV-2026-092,cust-3,Valley Green Farm Stand & Deli,September 2026,1050,1.95,2047.5,2047.5,Paid,2026-10-01,2026-10-15
-INV-2026-093,cust-6,Golden Spoon Sweet Confectionery,September 2026,900,2.6,2340,1950,Partially Paid,2026-10-01,2026-10-10
-INV-2026-094,cust-8,Crestview Dairy Cooperative Hub,September 2026,1800,1.85,3330,3330,Paid,2026-10-01,2026-10-15

@@ -1,3 +1,0 @@
-id,name,capacityLiters,currentLiters,tempCelsius,milkType,lastSanitized,status
-tank-1,Chiller Silo A (Bulk Whole),1200,580,3.6,Whole Standard Milk,2026-10-01 20:30,Chilling
-tank-2,Chiller Silo B (Premium A2 Reserve),600,195,3.8,A2 Certified Desi Milk,2026-10-01 21:00,Chilling
