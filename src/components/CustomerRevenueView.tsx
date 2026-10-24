@@ -3,9 +3,10 @@
 import React, { useState } from 'react';
 import { useDairy } from '../context/DairyContext';
 import { Customer, CustomerType, Invoice } from '../types/dairy';
+import { endOfMonthISO, startOfMonthISO, todayISO } from '../lib/date';
 import { 
   Users, 
-  DollarSign, 
+  IndianRupee, 
   FileText, 
   Plus, 
   CheckCircle2, 
@@ -15,16 +16,19 @@ import {
   Phone, 
   MapPin,
   Search,
-  CreditCard
+  CreditCard,
+  Trash2
 } from 'lucide-react';
 
 export const CustomerRevenueView: React.FC = () => {
   const {
     customers,
     invoices,
+    selectedDate,
     currencySymbol,
     addCustomer,
     updateCustomer,
+    deleteCustomer,
     recordInvoicePayment,
     generateCustomerInvoice
   } = useDairy();
@@ -37,7 +41,9 @@ export const CustomerRevenueView: React.FC = () => {
   const [selectedInvoiceToPrint, setSelectedInvoiceToPrint] = useState<Invoice | null>(null);
   const [isGenerateInvoiceOpen, setIsGenerateInvoiceOpen] = useState(false);
   const [selectedCustForInvoice, setSelectedCustForInvoice] = useState(customers[0]?.id || '');
-  const [invoiceMonth, setInvoiceMonth] = useState('October 2026');
+  const [invoiceFrom, setInvoiceFrom] = useState('');
+  const [invoiceTo, setInvoiceTo] = useState('');
+  const [invoiceDateError, setInvoiceDateError] = useState('');
 
   // New Customer Form State
   const [custForm, setCustForm] = useState<{
@@ -50,6 +56,7 @@ export const CustomerRevenueView: React.FC = () => {
     dailyQuotaLiters: number;
     milkType: Customer['milkType'];
     unitPrice: number;
+    milkBaseRate: number;
     preferredSession: Customer['preferredSession'];
     status: Customer['status'];
   }>({
@@ -62,6 +69,7 @@ export const CustomerRevenueView: React.FC = () => {
     dailyQuotaLiters: 2.0,
     milkType: 'Whole Cow Milk',
     unitPrice: 2.20,
+    milkBaseRate: 43,
     preferredSession: 'Morning',
     status: 'Active'
   });
@@ -100,6 +108,7 @@ export const CustomerRevenueView: React.FC = () => {
       dailyQuotaLiters: Number(custForm.dailyQuotaLiters),
       milkType: custForm.milkType,
       unitPrice: Number(custForm.unitPrice),
+      milkBaseRate: Number(custForm.milkBaseRate),
       preferredSession: custForm.preferredSession,
       status: custForm.status
     });
@@ -115,9 +124,37 @@ export const CustomerRevenueView: React.FC = () => {
       dailyQuotaLiters: 2.0,
       milkType: 'Whole Cow Milk',
       unitPrice: 2.20,
+      milkBaseRate: 43,
       preferredSession: 'Morning',
       status: 'Active'
     });
+  };
+
+  const handleDeleteCustomer = (customer: Customer) => {
+    const invoiceCount = invoices.filter(
+      (invoice) => invoice.customerId === customer.id
+    ).length;
+    const relatedRecords =
+      invoiceCount > 0
+        ? `all delivery logs and ${invoiceCount} related invoice${
+            invoiceCount === 1 ? '' : 's'
+          }`
+        : 'all related delivery logs';
+    const balanceWarning =
+      customer.balanceDue > 0
+        ? `\n\nOutstanding balance: ${currencySymbol}${customer.balanceDue.toFixed(2)}.`
+        : '';
+
+    if (
+      window.confirm(
+        `Permanently delete ${customer.name} and ${relatedRecords}?${balanceWarning}\n\nThis cannot be undone.`
+      )
+    ) {
+      deleteCustomer(customer.id);
+      if (selectedCustForInvoice === customer.id) {
+        setSelectedCustForInvoice('');
+      }
+    }
   };
 
   const handleRecordPaymentSubmit = (e: React.FormEvent) => {
@@ -131,8 +168,40 @@ export const CustomerRevenueView: React.FC = () => {
 
   const handleGenerateInvoiceSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    generateCustomerInvoice(selectedCustForInvoice, invoiceMonth);
+    if (!selectedCustForInvoice) return;
+    if (!invoiceFrom || !invoiceTo) {
+      setInvoiceDateError('Select both a start and end date.');
+      return;
+    }
+    if (invoiceFrom > invoiceTo) {
+      setInvoiceDateError('The start date must be on or before the end date.');
+      return;
+    }
+
+    setInvoiceDateError('');
+    generateCustomerInvoice(selectedCustForInvoice, invoiceFrom, invoiceTo);
     setIsGenerateInvoiceOpen(false);
+  };
+
+  const selectThisMonth = () => {
+    const anchor = selectedDate || todayISO();
+    setInvoiceFrom(startOfMonthISO(anchor));
+    setInvoiceTo(endOfMonthISO(anchor));
+    setInvoiceDateError('');
+  };
+
+  const openGenerateInvoice = (customerId?: string) => {
+    const targetCustomerId =
+      customerId || selectedCustForInvoice || customers[0]?.id || '';
+    if (targetCustomerId) {
+      setSelectedCustForInvoice(targetCustomerId);
+    }
+
+    if (!invoiceFrom || !invoiceTo) {
+      selectThisMonth();
+    }
+    setInvoiceDateError('');
+    setIsGenerateInvoiceOpen(true);
   };
 
   return (
@@ -144,17 +213,17 @@ export const CustomerRevenueView: React.FC = () => {
             Customer Directory & Financial Revenue
           </h1>
           <p className="text-xs text-stone-500">
-            Subscriber management, route quotas, monthly invoicing, payment ledger & receivables
+            Subscriber management, route quotas, billing periods, payment ledger & receivables
           </p>
         </div>
 
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setIsGenerateInvoiceOpen(true)}
+            onClick={() => openGenerateInvoice()}
             className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white transition-colors cursor-pointer shadow-xs"
           >
             <FileText className="w-4 h-4 text-emerald-200" />
-            <span>Generate Monthly Invoice</span>
+            <span>Generate Invoice</span>
           </button>
           <button
             onClick={() => setIsAddCustomerOpen(true)}
@@ -187,7 +256,7 @@ export const CustomerRevenueView: React.FC = () => {
         <div className="bg-white p-4 rounded-xl border border-stone-200 shadow-xs">
           <div className="flex items-center justify-between text-stone-500 text-xs font-medium mb-1">
             <span>Total Invoiced (This Season)</span>
-            <DollarSign className="w-4 h-4 text-emerald-700" />
+            <IndianRupee className="w-4 h-4 text-emerald-700" />
           </div>
           <div className="flex items-baseline gap-1 mt-1">
             <span className="text-stone-400 text-base">{currencySymbol}</span>
@@ -302,7 +371,12 @@ export const CustomerRevenueView: React.FC = () => {
                       </td>
 
                       <td className="py-3 px-4 text-right font-mono text-stone-700 tabular-nums">
-                        {currencySymbol}{cust.unitPrice.toFixed(2)}
+                        <p>{currencySymbol}{cust.unitPrice.toFixed(2)}</p>
+                        {cust.milkBaseRate != null && (
+                          <p className="text-[10px] text-stone-400">
+                            Base {currencySymbol}{cust.milkBaseRate.toFixed(2)}
+                          </p>
+                        )}
                       </td>
 
                       <td className="py-3 px-4 text-right font-mono tabular-nums">
@@ -312,15 +386,22 @@ export const CustomerRevenueView: React.FC = () => {
                       </td>
 
                       <td className="py-3 px-4 text-right">
-                        <button
-                          onClick={() => {
-                            setSelectedCustForInvoice(cust.id);
-                            setIsGenerateInvoiceOpen(true);
-                          }}
-                          className="px-2.5 py-1 text-[11px] font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded border border-emerald-200 cursor-pointer"
-                        >
-                          Invoice &rarr;
-                        </button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => openGenerateInvoice(cust.id)}
+                            className="px-2.5 py-1 text-[11px] font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded border border-emerald-200 cursor-pointer"
+                          >
+                            Invoice &rarr;
+                          </button>
+                          <button
+                            onClick={() => handleDeleteCustomer(cust)}
+                            title="Delete customer"
+                            aria-label={`Delete ${cust.name}`}
+                            className="p-1.5 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded border border-transparent hover:border-rose-200 transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -346,7 +427,7 @@ export const CustomerRevenueView: React.FC = () => {
                 <tr>
                   <th className="py-3 px-4">Invoice #</th>
                   <th className="py-3 px-4">Customer</th>
-                  <th className="py-3 px-4">Billing Month</th>
+                  <th className="py-3 px-4">Billing Period</th>
                   <th className="py-3 px-4 text-right">Total Liters</th>
                   <th className="py-3 px-4 text-right">Rate / L</th>
                   <th className="py-3 px-4 text-right">Total Billed</th>
@@ -555,7 +636,7 @@ export const CustomerRevenueView: React.FC = () => {
                 <div>
                   <span className="text-[11px] text-stone-400 uppercase font-semibold block mb-0.5">Billed To:</span>
                   <p className="font-bold text-stone-900">{selectedInvoiceToPrint.customerName}</p>
-                  <p className="text-stone-600 text-[11px]">Monthly Dairy Account Subscription</p>
+                  <p className="text-stone-600 text-[11px]">Dairy Account Subscription</p>
                 </div>
                 <div className="text-right">
                   <span className="text-[11px] text-stone-400 uppercase font-semibold block mb-0.5">Billing Period:</span>
@@ -645,14 +726,47 @@ export const CustomerRevenueView: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-stone-700 font-semibold mb-1">Billing Month Cycle</label>
-                  <input
-                    type="text"
-                    value={invoiceMonth}
-                    onChange={(e) => setInvoiceMonth(e.target.value)}
-                    placeholder="e.g. October 2026"
-                    className="w-full px-3 py-1.5 rounded-lg border border-stone-300 focus:outline-hidden focus:border-emerald-600"
-                  />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-stone-700 font-semibold">Billing Period</label>
+                    <button
+                      type="button"
+                      onClick={selectThisMonth}
+                      className="px-2 py-0.5 text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded hover:bg-emerald-100 cursor-pointer"
+                    >
+                      This month
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-semibold text-stone-500 mb-1">From</label>
+                      <input
+                        type="date"
+                        required
+                        value={invoiceFrom}
+                        onChange={(e) => {
+                          setInvoiceFrom(e.target.value);
+                          setInvoiceDateError('');
+                        }}
+                        className="w-full px-3 py-1.5 rounded-lg border border-stone-300 focus:outline-hidden focus:border-emerald-600 font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-semibold text-stone-500 mb-1">To</label>
+                      <input
+                        type="date"
+                        required
+                        value={invoiceTo}
+                        onChange={(e) => {
+                          setInvoiceTo(e.target.value);
+                          setInvoiceDateError('');
+                        }}
+                        className="w-full px-3 py-1.5 rounded-lg border border-stone-300 focus:outline-hidden focus:border-emerald-600 font-mono"
+                      />
+                    </div>
+                  </div>
+                  {invoiceDateError && (
+                    <p className="mt-1.5 text-[11px] text-rose-600">{invoiceDateError}</p>
+                  )}
                 </div>
               </div>
 
@@ -754,18 +868,6 @@ export const CustomerRevenueView: React.FC = () => {
                       min="0.5"
                       value={custForm.dailyQuotaLiters}
                       onChange={(e) => setCustForm({ ...custForm, dailyQuotaLiters: Number(e.target.value) })}
-                      className="w-full px-3 py-1.5 rounded-lg border border-stone-300 font-mono"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-stone-700 font-semibold mb-1">Unit Price ({currencySymbol} / Liter)</label>
-                    <input
-                      type="number"
-                      step="0.05"
-                      min="0.50"
-                      value={custForm.unitPrice}
-                      onChange={(e) => setCustForm({ ...custForm, unitPrice: Number(e.target.value) })}
                       className="w-full px-3 py-1.5 rounded-lg border border-stone-300 font-mono"
                     />
                   </div>

@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { useDairy } from '../context/DairyContext';
 import { MilkingSession } from '../types/dairy';
+import { calculateSnf } from '../lib/milk-quality';
 import { Milk, Truck, HeartPulse, X, AlertTriangle } from 'lucide-react';
 
 interface QuickLogModalProps {
@@ -20,7 +21,8 @@ export const QuickLogModal: React.FC<QuickLogModalProps> = ({ isOpen, onClose })
   const [session, setSession] = useState<MilkingSession>('Morning');
   const [liters, setLiters] = useState<number>(14.0);
   const [fat, setFat] = useState<number>(4.2);
-  const [snf, setSnf] = useState<number>(8.8);
+  const [clr, setClr] = useState<number>(29.4);
+  const snf = calculateSnf(clr, fat);
 
   // Delivery quick form
   const [selectedCustId, setSelectedCustId] = useState(customers[0]?.id || '');
@@ -42,8 +44,13 @@ export const QuickLogModal: React.FC<QuickLogModalProps> = ({ isOpen, onClose })
       cowTag: currentCow.tagNumber,
       liters: Number(liters),
       fatPercentage: Number(fat),
+      clr: Number(clr),
       snfPercentage: Number(snf),
-      qualityStatus: isWithheld ? 'Discarded' : 'Optimal',
+      qualityStatus: isWithheld
+        ? 'Discarded'
+        : fat >= 4.0 && snf >= 8.5
+        ? 'Optimal'
+        : 'Standard',
       isWithheld: isWithheld,
       milkerName: 'Station Operator',
       notes: isWithheld ? 'Quick log withheld' : undefined
@@ -164,28 +171,48 @@ export const QuickLogModal: React.FC<QuickLogModalProps> = ({ isOpen, onClose })
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <label className="block text-stone-700 font-semibold mb-1">CLR</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="1"
+                  max="40"
+                  value={clr}
+                  onChange={(e) => setClr(Number(e.target.value))}
+                  title="Corrected Lactometer Reading"
+                  className="w-full px-2 py-1.5 rounded-lg border border-stone-300 font-mono"
+                />
+              </div>
               <div>
                 <label className="block text-stone-700 font-semibold mb-1">Butterfat %</label>
                 <input
                   type="number"
                   step="0.1"
+                  min="1.0"
+                  max="10.0"
                   value={fat}
                   onChange={(e) => setFat(Number(e.target.value))}
-                  className="w-full px-3 py-1.5 rounded-lg border border-stone-300 font-mono"
+                  className="w-full px-2 py-1.5 rounded-lg border border-stone-300 font-mono"
                 />
               </div>
               <div>
-                <label className="block text-stone-700 font-semibold mb-1">SNF %</label>
+                <label className="block text-stone-700 font-semibold mb-1">SNF % (auto)</label>
                 <input
                   type="number"
-                  step="0.1"
+                  step="0.01"
                   value={snf}
-                  onChange={(e) => setSnf(Number(e.target.value))}
-                  className="w-full px-3 py-1.5 rounded-lg border border-stone-300 font-mono"
+                  readOnly
+                  tabIndex={-1}
+                  title="Calculated from CLR and butterfat"
+                  className="w-full px-2 py-1.5 rounded-lg border border-stone-200 bg-stone-50 text-stone-600 font-mono cursor-default"
                 />
               </div>
             </div>
+            <p className="text-[10px] text-stone-500">
+              SNF is calculated automatically: CLR ÷ 4 + 0.25 × fat + 0.44.
+            </p>
 
             <div className="pt-2 flex justify-end gap-2">
               <button

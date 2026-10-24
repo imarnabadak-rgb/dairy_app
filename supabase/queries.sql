@@ -25,6 +25,7 @@ select
   data->>'cowTag' as cow_tag,
   (data->>'liters')::numeric as liters,
   (data->>'fatPercentage')::numeric as fat_percentage,
+  (data->>'clr')::numeric as clr,
   (data->>'snfPercentage')::numeric as snf_percentage,
   coalesce((data->>'isWithheld')::boolean, false) as is_withheld,
   data->>'qualityStatus' as quality_status,
@@ -46,10 +47,34 @@ select
     where is_withheld or quality_status = 'Discarded'
   ) as discarded_liters,
   round(avg(fat_percentage), 2) as avg_fat,
+  round(avg(clr), 2) as avg_clr,
   round(avg(snf_percentage), 2) as avg_snf,
   count(*) as log_count
 from public.dairy_milk_logs
 group by date;
+
+-- Milk sales to buyers ------------------------------------------------------
+drop view if exists public.dairy_milk_sales;
+create or replace view public.dairy_milk_sales
+with (security_invoker = true) as
+select
+  id,
+  sale_date as date,
+  buyer_id,
+  buyer_name,
+  session,
+  quantity_liters,
+  clr,
+  fat_percentage,
+  snf_percentage,
+  base_rate,
+  rate_per_liter,
+  total_amount,
+  payment_status,
+  notes,
+  created_at,
+  updated_at
+from public.milk_sales;
 
 -- Outstanding invoices ------------------------------------------------------
 create or replace view public.dairy_outstanding_invoices
@@ -126,6 +151,7 @@ $$;
 grant select on
   public.dairy_milk_logs,
   public.dairy_milk_daily,
+  public.dairy_milk_sales,
   public.dairy_outstanding_invoices,
   public.dairy_feed_status
 to anon, authenticated;

@@ -32,6 +32,20 @@ export function isDairyCollection(value: string): value is DairyCollection {
   return (DAIRY_COLLECTIONS as readonly string[]).includes(value);
 }
 
+/**
+ * Keep one record per id. If duplicates exist (for example after a race on an
+ * older table without the (collection, id) unique index), the last occurrence
+ * wins. Callers that care about newest-wins should pass rows ordered by
+ * `updated_at` ascending.
+ */
+export function dedupeDairyRecords<T extends { id: string }>(records: T[]): T[] {
+  const byId = new Map<string, T>();
+  for (const record of records) {
+    byId.set(record.id, record);
+  }
+  return [...byId.values()];
+}
+
 /** Newest-first for date-based collections; stable order otherwise. */
 export function sortDairyRecords(
   collection: DairyCollection,

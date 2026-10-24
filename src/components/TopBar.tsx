@@ -6,8 +6,7 @@ import {
   Calendar, 
   Download, 
   RefreshCw,
-  Sparkles,
-  Trash2
+  Sparkles
 } from 'lucide-react';
 
 interface TopBarProps {
@@ -25,7 +24,6 @@ export const TopBar: React.FC<TopBarProps> = ({
     selectedDate, 
     setSelectedDate, 
     exportDataJSON, 
-    clearFarmData, 
     cattle,
     syncStatus,
     lastSyncedAt,
@@ -69,13 +67,11 @@ export const TopBar: React.FC<TopBarProps> = ({
   const navLinks = [
     { id: 'dashboard', label: 'Dashboard' },
     { id: 'production', label: 'Milk Yield' },
+    { id: 'sales', label: 'Sales' },
     { id: 'cattle', label: 'Cattle Herd' },
-    { id: 'ai', label: 'AI Health & Yield' },
-    { id: 'supply', label: 'Deliveries' },
     { id: 'customers', label: 'Revenue & Customers' },
     { id: 'expenses', label: 'Farm Expenses' },
     { id: 'health', label: 'Vaccines & Care' },
-    { id: 'inventory', label: 'Feed & Tanks' },
   ];
 
   return (
@@ -175,19 +171,6 @@ export const TopBar: React.FC<TopBarProps> = ({
             className="p-1.5 text-neutral-600 hover:text-emerald-800 hover:bg-emerald-50 rounded-lg border border-neutral-200 transition-colors cursor-pointer"
           >
             <Download className="w-4 h-4" />
-          </button>
-
-          {/* Clear all data */}
-          <button
-            onClick={() => {
-              if (window.confirm('Delete all farm data from the database? This cannot be undone.')) {
-                clearFarmData();
-              }
-            }}
-            title="Clear All Farm Data"
-            className="p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-neutral-100 rounded-lg border border-neutral-200 transition-colors cursor-pointer"
-          >
-            <Trash2 className="w-4 h-4" />
           </button>
         </div>
       </div>

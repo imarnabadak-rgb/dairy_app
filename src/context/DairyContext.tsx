@@ -10,9 +10,11 @@ import React, {
 } from 'react';
 import {
   DAIRY_COLLECTIONS,
+  dedupeDairyRecords,
   type DairyCollection,
 } from '@/lib/dairy/collections';
 import {
+  deleteDairyRecord,
   fetchAllDairyData,
   insertDairyRecord,
   insertDairyRecords,
@@ -20,10 +22,16 @@ import {
   type AllDairyData,
   type DataSourceStatus,
 } from '@/lib/dairy/client';
-import { todayISO } from '@/lib/date';
+import {
+  fetchMilkSales,
+  insertMilkSale,
+  saveMilkSales,
+} from '@/lib/sales/client';
+import { formatDateRange, parseISODate, todayISO } from '@/lib/date';
 import {
   Cattle,
   MilkLog,
+  MilkSale,
   Customer,
   DailySupplyLog,
   Invoice,
@@ -36,6 +44,7 @@ import {
 interface DairyContextType {
   cattle: Cattle[];
   milkLogs: MilkLog[];
+  sales: MilkSale[];
   customers: Customer[];
   supplyLogs: DailySupplyLog[];
   invoices: Invoice[];
@@ -61,11 +70,18 @@ interface DairyContextType {
 
   // Milk Production actions
   addMilkLog: (log: Omit<MilkLog, 'id'>) => void;
+  updateMilkLog: (id: string, log: Partial<Omit<MilkLog, 'id'>>) => void;
   deleteMilkLog: (id: string) => void;
+
+  // Milk sales to buyers
+  addMilkSale: (sale: Omit<MilkSale, 'id'>) => void;
+  updateMilkSale: (id: string, sale: Partial<Omit<MilkSale, 'id'>>) => void;
+  deleteMilkSale: (id: string) => void;
 
   // Customer actions
   addCustomer: (cust: Omit<Customer, 'id' | 'balanceDue'>) => void;
   updateCustomer: (id: string, cust: Partial<Customer>) => void;
+  deleteCustomer: (id: string) => void;
 
   // Supply / Delivery actions
   toggleDeliveryStatus: (id: string, newStatus: DailySupplyLog['deliveryStatus']) => void;
@@ -76,10 +92,11 @@ interface DairyContextType {
 
   // Invoices & Billing
   recordInvoicePayment: (invoiceId: string, amount: number) => void;
-  generateCustomerInvoice: (customerId: string, month: string) => void;
+  generateCustomerInvoice: (customerId: string, from: string, to: string) => void;
 
   // Expenses actions
   addExpense: (exp: Omit<FarmExpense, 'id'>) => void;
+  updateExpense: (id: string, updated: Partial<Omit<FarmExpense, 'id'>>) => void;
   deleteExpense: (id: string) => void;
 
   // Health & Vaccines
@@ -107,6 +124,10 @@ let idSequence = 0;
 function makeId(prefix: string): string {
   idSequence += 1;
   return `${prefix}_${Date.now()}_${idSequence.toString(36)}`;
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
 }
 
 /**
@@ -148,16 +169,52 @@ function useCloudCollection<T extends { id: string }>(
   }, [collection, items, cloudReady, skipNextSyncRef, onSaving, onSynced, onError]);
 }
 
+/**
+ * Mirrors the dedicated milk-sales table. Sales use their own API and table,
+ * so they are not part of the generic dairy collection sync.
+ */
+function useCloudSales(
+  items: MilkSale[],
+  cloudReady: boolean,
+  skipNextSyncRef: { current: boolean },
+  onSaving: () => void,
+  onSynced: () => void,
+  onError: (message: string) => void
+) {
+  useEffect(() => {
+    if (!cloudReady) return;
+
+    if (skipNextSyncRef.current) {
+      skipNextSyncRef.current = false;
+      return;
+    }
+
+    onSaving();
+
+    const timer = window.setTimeout(() => {
+      void saveMilkSales(items)
+        .then(() => onSynced())
+        .catch((error: unknown) => {
+          console.error('Could not sync milk sales to Supabase', error);
+          onError(error instanceof Error ? error.message : String(error));
+        });
+    }, 400);
+
+    return () => window.clearTimeout(timer);
+  }, [items, cloudReady, skipNextSyncRef, onSaving, onSynced, onError]);
+}
+
 export const DairyProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [cloudReady, setCloudReady] = useState(false);
   const [syncStatus, setSyncStatus] = useState<DataSourceStatus>('loading');
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [databaseError, setDatabaseError] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<string>('');
-  const [currencySymbol, setCurrencySymbol] = useState<string>('$');
+  const [currencySymbol, setCurrencySymbol] = useState<string>('₹');
 
   const [cattle, setCattle] = useState<Cattle[]>([]);
   const [milkLogs, setMilkLogs] = useState<MilkLog[]>([]);
+  const [sales, setSales] = useState<MilkSale[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [supplyLogs, setSupplyLogs] = useState<DailySupplyLog[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -169,6 +226,7 @@ export const DairyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Collections that were just read from the database should not be written
   // straight back by the first sync effect.
   const skipNextSyncRef = useRef<Set<DairyCollection>>(new Set());
+  const skipNextSalesSyncRef = useRef(true);
 
   const markSynced = useCallback(() => {
     setLastSyncedAt(new Date().toISOString());
@@ -186,11 +244,16 @@ export const DairyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setDatabaseError(message);
   }, []);
 
+  const applySalesData = useCallback((records: MilkSale[]) => {
+    skipNextSalesSyncRef.current = true;
+    setSales(records);
+  }, []);
+
   const applyDatabaseData = useCallback((payload: AllDairyData) => {
     // The database is the only source of truth. Every collection is replaced
     // with exactly what the database returned, including empty collections.
     for (const collection of DAIRY_COLLECTIONS) {
-      const records = payload.data[collection] ?? [];
+      const records = dedupeDairyRecords(payload.data[collection] ?? []);
       skipNextSyncRef.current.add(collection);
 
       switch (collection) {
@@ -224,40 +287,84 @@ export const DairyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     async function loadDatabaseData() {
       try {
-        const payload = await fetchAllDairyData();
-        if (!cancelled) applyDatabaseData(payload);
+        const [payload, salesResult] = await Promise.all([
+          fetchAllDairyData(),
+          fetchMilkSales()
+            .then((records) => ({ records, error: null as unknown }))
+            .catch((error: unknown) => ({
+              records: [] as MilkSale[],
+              error,
+            })),
+        ]);
+        if (cancelled) return;
+
+        applySalesData(salesResult.records);
+        applyDatabaseData(payload);
+
+        if (salesResult.error) {
+          console.error('Could not load milk sales from Supabase:', salesResult.error);
+          setSyncStatus('error');
+          setDatabaseError(
+            `Milk sales could not be loaded: ${errorMessage(
+              salesResult.error,
+              'Unknown database error'
+            )}`
+          );
+        }
       } catch (error) {
         if (cancelled) return;
 
         console.error('Could not load farm data from Supabase:', error);
         setSyncStatus('error');
-        setDatabaseError(error instanceof Error ? error.message : 'Unknown database error');
+        setDatabaseError(errorMessage(error, 'Unknown database error'));
         setCloudReady(false);
       }
     }
 
     void loadDatabaseData();
     return () => { cancelled = true; };
-  }, [applyDatabaseData]);
+  }, [applyDatabaseData, applySalesData]);
 
   const refreshFromDatabase = useCallback(async () => {
     setSyncStatus('loading');
     setDatabaseError(null);
 
     try {
-      const payload = await fetchAllDairyData();
+      const [payload, salesResult] = await Promise.all([
+        fetchAllDairyData(),
+        fetchMilkSales()
+          .then((records) => ({ records, error: null as unknown }))
+          .catch((error: unknown) => ({
+            records: [] as MilkSale[],
+            error,
+          })),
+      ]);
+
+      applySalesData(salesResult.records);
       applyDatabaseData(payload);
+
+      if (salesResult.error) {
+        console.error('Could not load milk sales from Supabase:', salesResult.error);
+        setSyncStatus('error');
+        setDatabaseError(
+          `Milk sales could not be loaded: ${errorMessage(
+            salesResult.error,
+            'Unknown database error'
+          )}`
+        );
+      }
     } catch (error) {
       console.error('Could not refresh farm data from Supabase:', error);
       setSyncStatus('error');
-      setDatabaseError(error instanceof Error ? error.message : 'Unknown database error');
+      setDatabaseError(errorMessage(error, 'Unknown database error'));
       setCloudReady(false);
     }
-  }, [applyDatabaseData]);
+  }, [applyDatabaseData, applySalesData]);
 
   // Push each collection to the database once the initial load has finished.
   useCloudCollection('cattle', cattle, cloudReady, skipNextSyncRef, markSaving, markSynced, markSyncError);
   useCloudCollection('milk_logs', milkLogs, cloudReady, skipNextSyncRef, markSaving, markSynced, markSyncError);
+  useCloudSales(sales, cloudReady, skipNextSalesSyncRef, markSaving, markSynced, markSyncError);
   useCloudCollection('customers', customers, cloudReady, skipNextSyncRef, markSaving, markSynced, markSyncError);
   useCloudCollection('supply_logs', supplyLogs, cloudReady, skipNextSyncRef, markSaving, markSynced, markSyncError);
   useCloudCollection('invoices', invoices, cloudReady, skipNextSyncRef, markSaving, markSynced, markSyncError);
@@ -283,6 +390,15 @@ export const DairyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const deleteCattle = (id: string) => {
     setCattle((prev) => prev.filter((c) => c.id !== id));
+
+    // Delete the row immediately instead of waiting for the debounced collection
+    // sync. The sync still runs as a safety net if this request fails.
+    void deleteDairyRecord('cattle', id).catch((error) => {
+      console.error(
+        'Could not delete cattle directly; the collection sync will retry.',
+        error
+      );
+    });
   };
 
   const addMilkLog = (log: Omit<MilkLog, 'id'>) => {
@@ -304,9 +420,52 @@ export const DairyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
+  const updateMilkLog = (id: string, updated: Partial<Omit<MilkLog, 'id'>>) => {
+    const existing = milkLogs.find((log) => log.id === id);
+    if (!existing) return;
+
+    const nextLog = { ...existing, ...updated };
+    setMilkLogs((prev) => prev.map((log) => (log.id === id ? nextLog : log)));
+
+    // Keep the first bulk tank aligned with any change to usable liters.
+    const wasUsable = !existing.isWithheld && existing.qualityStatus !== 'Discarded';
+    const isUsable = !nextLog.isWithheld && nextLog.qualityStatus !== 'Discarded';
+    const delta =
+      (isUsable ? Number(nextLog.liters) : 0) -
+      (wasUsable ? Number(existing.liters) : 0);
+
+    if (delta !== 0) {
+      setTanks((prev) =>
+        prev.map((t, idx) =>
+          idx === 0
+            ? {
+                ...t,
+                currentLiters: Math.max(
+                  0,
+                  Math.min(
+                    t.capacityLiters,
+                    Number((t.currentLiters + delta).toFixed(1))
+                  )
+                ),
+              }
+            : t
+        )
+      );
+    }
+  };
+
   const deleteMilkLog = (id: string) => {
     const log = milkLogs.find((m) => m.id === id);
     setMilkLogs((prev) => prev.filter((m) => m.id !== id));
+
+    // Delete the row immediately instead of waiting for the debounced collection
+    // sync. The sync still runs as a safety net if this request fails.
+    void deleteDairyRecord('milk_logs', id).catch((error) => {
+      console.error(
+        'Could not delete milk log directly; the collection sync will retry.',
+        error
+      );
+    });
 
     // Keep the bulk-tank total in sync when a usable log is removed.
     if (log && !log.isWithheld && log.qualityStatus !== 'Discarded') {
@@ -324,6 +483,62 @@ export const DairyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         )
       );
     }
+  };
+
+  const adjustFirstTank = (delta: number) => {
+    if (!delta) return;
+    setTanks((prev) =>
+      prev.map((t, idx) =>
+        idx === 0
+          ? {
+              ...t,
+              currentLiters: Math.max(
+                0,
+                Math.min(
+                  t.capacityLiters,
+                  Number((t.currentLiters + delta).toFixed(1))
+                )
+              ),
+            }
+          : t
+      )
+    );
+  };
+
+  const addMilkSale = (sale: Omit<MilkSale, 'id'>) => {
+    const record: MilkSale = { ...sale, id: makeId('sale') };
+    setSales((prev) => [record, ...prev]);
+
+    void insertMilkSale(record).catch((error) => {
+      console.error('Could not insert milk sale directly; the collection sync will retry.', error);
+    });
+
+    // Milk sold to a buyer leaves the bulk tank.
+    adjustFirstTank(-Number(record.quantityLiters));
+  };
+
+  const updateMilkSale = (id: string, updated: Partial<Omit<MilkSale, 'id'>>) => {
+    const existing = sales.find((sale) => sale.id === id);
+    if (!existing) return;
+
+    const quantityLiters = Number(updated.quantityLiters ?? existing.quantityLiters);
+    const ratePerLiter = Number(updated.ratePerLiter ?? existing.ratePerLiter);
+    const nextSale: MilkSale = {
+      ...existing,
+      ...updated,
+      quantityLiters,
+      ratePerLiter,
+      totalAmount: Number((quantityLiters * ratePerLiter).toFixed(2)),
+    };
+
+    setSales((prev) => prev.map((sale) => (sale.id === id ? nextSale : sale)));
+    adjustFirstTank(Number(existing.quantityLiters) - quantityLiters);
+  };
+
+  const deleteMilkSale = (id: string) => {
+    const existing = sales.find((sale) => sale.id === id);
+    setSales((prev) => prev.filter((sale) => sale.id !== id));
+    if (existing) adjustFirstTank(Number(existing.quantityLiters));
   };
 
   const addCustomer = (cust: Omit<Customer, 'id' | 'balanceDue'>) => {
@@ -361,6 +576,42 @@ export const DairyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const updateCustomer = (id: string, updated: Partial<Customer>) => {
     setCustomers((prev) => prev.map((c) => (c.id === id ? { ...c, ...updated } : c)));
+  };
+
+  const deleteCustomer = (id: string) => {
+    const relatedSupplyLogs = supplyLogs.filter((log) => log.customerId === id);
+    const relatedInvoices = invoices.filter((invoice) => invoice.customerId === id);
+
+    setCustomers((prev) => prev.filter((c) => c.id !== id));
+    setSupplyLogs((prev) => prev.filter((log) => log.customerId !== id));
+    setInvoices((prev) => prev.filter((invoice) => invoice.customerId !== id));
+
+    // Immediate deletes make removal permanent even if the user reloads before
+    // the debounced collection sync runs. The sync still runs as a fallback.
+    void deleteDairyRecord('customers', id).catch((error) => {
+      console.error(
+        'Could not delete customer directly; the collection sync will retry.',
+        error
+      );
+    });
+
+    for (const log of relatedSupplyLogs) {
+      void deleteDairyRecord('supply_logs', log.id).catch((error) => {
+        console.error(
+          'Could not delete customer delivery log directly; the collection sync will retry.',
+          error
+        );
+      });
+    }
+
+    for (const invoice of relatedInvoices) {
+      void deleteDairyRecord('invoices', invoice.id).catch((error) => {
+        console.error(
+          'Could not delete customer invoice directly; the collection sync will retry.',
+          error
+        );
+      });
+    }
   };
 
   const toggleDeliveryStatus = (id: string, newStatus: DailySupplyLog['deliveryStatus']) => {
@@ -457,11 +708,19 @@ export const DairyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     );
   };
 
-  const generateCustomerInvoice = (customerId: string, month: string) => {
+  const generateCustomerInvoice = (customerId: string, from: string, to: string) => {
     const cust = customers.find((c) => c.id === customerId);
     if (!cust) return;
 
-    const approxLiters = cust.dailyQuotaLiters * 30;
+    const fromDate = parseISODate(from);
+    const toDate = parseISODate(to);
+    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) return;
+    if (fromDate > toDate) return;
+
+    // Inclusive day count for the selected billing period.
+    const dayCount =
+      Math.round((toDate.getTime() - fromDate.getTime()) / 86400000) + 1;
+    const approxLiters = Number((cust.dailyQuotaLiters * dayCount).toFixed(2));
     const total = Number((approxLiters * cust.unitPrice).toFixed(2));
     const issueDate = selectedDate || todayISO();
     const dueDate = new Date(`${issueDate}T00:00:00Z`);
@@ -471,7 +730,9 @@ export const DairyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       id: makeId('INV'),
       customerId: cust.id,
       customerName: cust.name,
-      billingMonth: month,
+      billingMonth: formatDateRange(from, to),
+      billingFrom: from,
+      billingTo: to,
       totalLiters: approxLiters,
       ratePerLiter: cust.unitPrice,
       totalAmount: total,
@@ -532,6 +793,17 @@ export const DairyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
   };
 
+  const updateExpense = (
+    id: string,
+    updated: Partial<Omit<FarmExpense, 'id'>>
+  ) => {
+    setExpenses((prev) =>
+      prev.map((expense) =>
+        expense.id === id ? { ...expense, ...updated } : expense
+      )
+    );
+  };
+
   const deleteExpense = (id: string) => {
     setExpenses((prev) => prev.filter((e) => e.id !== id));
   };
@@ -540,6 +812,7 @@ export const DairyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const data = {
       cattle,
       milkLogs,
+      sales,
       customers,
       supplyLogs,
       invoices,
@@ -563,6 +836,7 @@ export const DairyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const parsed = JSON.parse(jsonStr);
       if (parsed.cattle) setCattle(parsed.cattle);
       if (parsed.milkLogs) setMilkLogs(parsed.milkLogs);
+      if (parsed.sales) setSales(parsed.sales);
       if (parsed.customers) setCustomers(parsed.customers);
       if (parsed.supplyLogs) setSupplyLogs(parsed.supplyLogs);
       if (parsed.invoices) setInvoices(parsed.invoices);
@@ -580,6 +854,7 @@ export const DairyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const clearFarmData = () => {
     setCattle([]);
     setMilkLogs([]);
+    setSales([]);
     setCustomers([]);
     setSupplyLogs([]);
     setInvoices([]);
@@ -594,6 +869,7 @@ export const DairyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       value={{
         cattle,
         milkLogs,
+        sales,
         customers,
         supplyLogs,
         invoices,
@@ -613,9 +889,14 @@ export const DairyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         updateCattle,
         deleteCattle,
         addMilkLog,
+        updateMilkLog,
         deleteMilkLog,
+        addMilkSale,
+        updateMilkSale,
+        deleteMilkSale,
         addCustomer,
         updateCustomer,
+        deleteCustomer,
         toggleDeliveryStatus,
         togglePaymentStatus,
         addSupplyLog,
@@ -624,6 +905,7 @@ export const DairyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         recordInvoicePayment,
         generateCustomerInvoice,
         addExpense,
+        updateExpense,
         deleteExpense,
         addVaccineRecord,
         updateVaccineStatus,

@@ -47,8 +47,8 @@ Here is the current real-time data for the dairy farm:
 - Herd Size: ${cattleData?.length || 10} cows (${cattleData?.map((c: any) => `${c.tagNumber} ${c.name} (${c.breed}, Status: ${c.status}, Health: ${c.healthCondition}, Daily Yield: ${c.avgDailyYield}L)`).join('; ')})
 - Active Antibiotic Milk Withholding: ${cattleData?.filter((c: any) => c.healthCondition === 'Withdrawal').map((c: any) => `${c.tagNumber} ${c.name}`).join(', ') || 'None'}
 - Today's Milk Output: ${milkData?.totalToday || 95} Liters (Avg Fat: ${milkData?.avgFat || 4.2}%, SNF: ${milkData?.avgSnf || 8.8}%)
-- Total Invoiced Revenue: $${revenueData?.totalInvoiced || 9292}
-- Total Farm Operating Expenses: $${expensesData?.totalExpenses || 1135} (Feed, Vaccines, Electricity, Labor, Maintenance)
+- Total Invoiced Revenue: ₹${revenueData?.totalInvoiced || 9292}
+- Total Farm Operating Expenses: ₹${expensesData?.totalExpenses || 1135} (Feed, Vaccines, Electricity, Labor, Maintenance)
 
 Farmer's specific question: "${customQuery}"
 
@@ -58,7 +58,7 @@ Provide a comprehensive, practical, and highly actionable response formatted in 
   "cowHealthRecommendations": ["Actionable health/vet recommendation 1", "Actionable health/vet recommendation 2"],
   "milkMaximizationTips": ["Practical tactic to boost cow milk yield based on feeding or management 1", "Practical tactic 2"],
   "profitAndExpenseOptimization": ["How to reduce costs or grow profit related to this question 1", "How to reduce costs or grow profit 2"],
-  "projectedFinancialImpact": "Estimated financial impact in dollars (e.g. +$150/month in net revenue or 8% feed savings)"
+  "projectedFinancialImpact": "Estimated financial impact in rupees (e.g. +₹150/month in net revenue or 8% feed savings)"
 }`;
     } else if (specificCow) {
       prompt = `You are a world-class veterinary dairy specialist and herd nutrition advisor.
@@ -87,8 +87,8 @@ Analyze this dairy farm's current operations:
 - Total Cattle: ${cattleData?.length || 10} head (${cattleData?.filter((c: any) => c.status === 'Lactating').length || 7} milking)
 - Today Milk Yield: ${milkData?.totalToday || 95} Liters, Average Fat: ${milkData?.avgFat || 4.2}%, SNF: ${milkData?.avgSnf || 8.8}%
 - Antibiotic Withheld Cows: ${cattleData?.filter((c: any) => c.healthCondition === 'Withdrawal').length || 1}
-- Total Revenue Invoiced: $${revenueData?.totalInvoiced || 9292}
-- Total Farm Expenses: $${expensesData?.totalExpenses || 1135} (Top categories: Feed & Fodder, Veterinary, Labor, Power)
+- Total Revenue Invoiced: ₹${revenueData?.totalInvoiced || 9292}
+- Total Farm Expenses: ₹${expensesData?.totalExpenses || 1135} (Top categories: Feed & Fodder, Veterinary, Labor, Power)
 - Operating Profit Margin: ~${revenueData?.margin || 87}%
 
 Provide a comprehensive, high-impact farm optimization and profit strategy in clean JSON format with these exact keys:

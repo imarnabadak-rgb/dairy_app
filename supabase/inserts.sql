@@ -1,7 +1,7 @@
 -- ---------------------------------------------------------------------------
 -- DairyFlow manual INSERT examples.
 -- Optional: run individual statements in the Supabase SQL Editor.
--- The running app inserts through POST /api/dairy and POST /api/dairy/:collection.
+-- The running app inserts through POST /api/dairy and POST /api/sales.
 -- ---------------------------------------------------------------------------
 
 -- Form INSERT examples
@@ -30,11 +30,46 @@ values (
     'cowTag', 'DF-102',
     'liters', 20,
     'fatPercentage', 4.2,
-    'snfPercentage', 8.8,
+    'clr', 29.4,
+    'snfPercentage', 8.84,
     'qualityStatus', 'Optimal',
     'isWithheld', false,
     'milkerName', 'Arnab'
   )
+);
+
+-- Milk Sales: daily sale to a customer buyer (dedicated table)
+insert into public.milk_sales (
+  id,
+  sale_date,
+  buyer_id,
+  buyer_name,
+  session,
+  quantity_liters,
+  clr,
+  fat_percentage,
+  snf_percentage,
+  base_rate,
+  rate_per_liter,
+  total_amount,
+  payment_status,
+  notes
+)
+values (
+  'sale_example_001',
+  '2026-10-21',
+  'cust_example_001',
+  'Green Leaf Cafe',
+  'Combined',
+  120,
+  29.4,
+  4.2,
+  8.84,
+  43,
+  42.69,
+  5122.80,
+  'Pending',
+  'Morning tanker dispatch'
 );
 
 -- Cattle herd
@@ -75,6 +110,7 @@ values (
     'dailyQuotaLiters', 15,
     'milkType', 'Whole Cow Milk',
     'unitPrice', 1.2,
+    'milkBaseRate', 43,
     'balanceDue', 0,
     'preferredSession', 'Morning',
     'status', 'Active'

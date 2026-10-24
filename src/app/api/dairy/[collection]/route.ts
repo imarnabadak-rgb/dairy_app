@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import {
   COLLECTION_DATE_FIELD,
+  dedupeDairyRecords,
   isDairyCollection,
   sortDairyRecords,
   type DairyRecord,
@@ -26,6 +27,7 @@ const MAX_RECORDS_PER_SAVE = 5000;
 interface StoredRow {
   id: string;
   data: Record<string, unknown> | null;
+  updated_at?: string | null;
 }
 
 function notConfiguredResponse() {
@@ -127,7 +129,7 @@ export async function GET(
     const supabase = getSupabaseServerClient();
     let query = supabase
       .from(DAIRY_RECORDS_TABLE)
-      .select('id,data')
+      .select('id,data,updated_at')
       .eq('collection', collection);
 
     if (dateField) {
@@ -144,11 +146,15 @@ export async function GET(
     const { data, error } = await query;
     if (error) throw new Error(error.message);
 
-    const records = ((data ?? []) as StoredRow[]).map((row) => ({
+    // Sort oldest-first so dedupeDairyRecords keeps the newest duplicate.
+    const rows = ((data ?? []) as StoredRow[]).sort((a, b) =>
+      String(a.updated_at ?? '').localeCompare(String(b.updated_at ?? ''))
+    );
+    const records = rows.map((row) => ({
       ...(row.data ?? {}),
       id: row.id,
     }));
-    const sorted = sortDairyRecords(collection, records);
+    const sorted = sortDairyRecords(collection, dedupeDairyRecords(records));
 
     return NextResponse.json({
       success: true,
@@ -265,6 +271,70 @@ export async function POST(
 }
 
 /**
+ * DELETE /api/dairy/:collection?id=...
+ *
+ * Permanently removes a single record. Immediate deletes use this endpoint in
+ * addition to the debounced collection sync so a deleted log does not reappear
+ * after a refresh.
+ */
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ collection: string }> }
+) {
+  const { collection } = await params;
+
+  if (!isDairyCollection(collection)) {
+    return NextResponse.json(
+      { success: false, error: `Unknown collection: ${collection}.` },
+      { status: 404 }
+    );
+  }
+
+  if (!isDatabaseConfigured()) {
+    return notConfiguredResponse();
+  }
+
+  const id = new URL(request.url).searchParams.get('id')?.trim() ?? '';
+  if (!id) {
+    return NextResponse.json(
+      { success: false, error: 'Query parameter `id` is required.' },
+      { status: 400 }
+    );
+  }
+
+  try {
+    const supabase = getSupabaseServerClient();
+    const { error } = await supabase
+      .from(DAIRY_RECORDS_TABLE)
+      .delete()
+      .eq('collection', collection)
+      .eq('id', id);
+
+    if (error) throw new Error(error.message);
+
+    return NextResponse.json({
+      success: true,
+      collection,
+      id,
+      deleted: true,
+      deletedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error(`[api/dairy/${collection}] DELETE failed`, error);
+    return NextResponse.json(
+      {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : `Could not delete from ${collection}.`,
+      },
+      { status: 500 }
+    );
+  }
+}
+
+/**
  * PUT /api/dairy/:collection
  * Body: { "records": [{ "id": "c1", ...fields }] }
  *
@@ -358,14 +428,6 @@ export async function PUT(
   try {
     const supabase = getSupabaseServerClient();
 
-    if (rows.length > 0) {
-      const { error } = await supabase
-        .from(DAIRY_RECORDS_TABLE)
-        .upsert(rows, { onConflict: 'collection,id' });
-
-      if (error) throw new Error(error.message);
-    }
-
     const { data: existingRows, error: existingError } = await supabase
       .from(DAIRY_RECORDS_TABLE)
       .select('id')
@@ -373,10 +435,51 @@ export async function PUT(
 
     if (existingError) throw new Error(existingError.message);
 
+    const existingIds = new Set(
+      ((existingRows ?? []) as { id: string }[]).map((row) => row.id)
+    );
+
+    if (rows.length > 0) {
+      const { error } = await supabase
+        .from(DAIRY_RECORDS_TABLE)
+        .upsert(rows, { onConflict: 'collection,id' });
+
+      if (error) {
+        if (error.code !== '42P10') throw new Error(error.message);
+
+        // Older installs may not have the composite primary key that Postgres
+        // requires for ON CONFLICT (collection, id). Fall back to explicit
+        // updates/inserts so the app remains usable. The correct fix is still
+        // to add the unique index from 004_repair_dairy_records_unique.sql.
+        console.warn(
+          `[api/dairy/${collection}] Missing (collection, id) unique index; using update/insert fallback.`
+        );
+
+        for (const row of rows) {
+          if (!existingIds.has(row.id)) continue;
+
+          const { error: updateError } = await supabase
+            .from(DAIRY_RECORDS_TABLE)
+            .update({ data: row.data, updated_at: row.updated_at })
+            .eq('collection', collection)
+            .eq('id', row.id);
+
+          if (updateError) throw new Error(updateError.message);
+        }
+
+        const newRows = rows.filter((row) => !existingIds.has(row.id));
+        if (newRows.length > 0) {
+          const { error: insertError } = await supabase
+            .from(DAIRY_RECORDS_TABLE)
+            .insert(newRows);
+
+          if (insertError) throw new Error(insertError.message);
+        }
+      }
+    }
+
     const keepIds = new Set(rows.map((row) => row.id));
-    const removedIds = ((existingRows ?? []) as { id: string }[])
-      .map((row) => row.id)
-      .filter((id) => !keepIds.has(id));
+    const removedIds = [...existingIds].filter((id) => !keepIds.has(id));
 
     if (removedIds.length > 0) {
       const { error } = await supabase

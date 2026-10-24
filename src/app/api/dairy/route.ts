@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import {
   DAIRY_COLLECTIONS,
+  dedupeDairyRecords,
   isDairyCollection,
   sortDairyRecords,
   type DairyCollection,
@@ -25,6 +26,7 @@ interface StoredRow {
   collection: string;
   id: string;
   data: Record<string, unknown> | null;
+  updated_at?: string | null;
 }
 
 function notConfiguredResponse() {
@@ -89,7 +91,7 @@ export async function GET(request: Request) {
     const supabase = getSupabaseServerClient();
     const { data, error } = await supabase
       .from(DAIRY_RECORDS_TABLE)
-      .select('collection,id,data')
+      .select('collection,id,data,updated_at')
       .in('collection', collections);
 
     if (error) {
@@ -101,7 +103,12 @@ export async function GET(request: Request) {
       grouped[collection] = [];
     }
 
-    for (const row of (data ?? []) as StoredRow[]) {
+    // Sort oldest-first so dedupeDairyRecords keeps the newest duplicate.
+    const rows = ((data ?? []) as StoredRow[]).sort((a, b) =>
+      String(a.updated_at ?? '').localeCompare(String(b.updated_at ?? ''))
+    );
+
+    for (const row of rows) {
       if (!isDairyCollection(row.collection)) continue;
       grouped[row.collection].push({
         ...(row.data ?? {}),
@@ -111,7 +118,10 @@ export async function GET(request: Request) {
 
     const counts: Record<string, number> = {};
     for (const collection of collections) {
-      grouped[collection] = sortDairyRecords(collection, grouped[collection]);
+      grouped[collection] = sortDairyRecords(
+        collection,
+        dedupeDairyRecords(grouped[collection])
+      );
       counts[collection] = grouped[collection].length;
     }
 

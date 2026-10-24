@@ -13,15 +13,10 @@ import {
   AlertTriangle, 
   X, 
   Check, 
-  Layers,
-  Sparkles
+  Layers
 } from 'lucide-react';
 
-interface CattleViewProps {
-  onNavigateToAi?: () => void;
-}
-
-export const CattleView: React.FC<CattleViewProps> = ({ onNavigateToAi }) => {
+export const CattleView: React.FC = () => {
   const { cattle, addCattle, updateCattle, deleteCattle, milkLogs, vaccines } = useDairy();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -211,7 +206,11 @@ export const CattleView: React.FC<CattleViewProps> = ({ onNavigateToAi }) => {
   };
 
   const handleDeleteCow = (cow: Cattle) => {
-    if (window.confirm(`Are you sure you want to remove ${cow.name} (${cow.tagNumber}) from the herd registry?`)) {
+    if (
+      window.confirm(
+        `Permanently remove ${cow.name} (${cow.tagNumber}) from the herd registry? This cannot be undone.`
+      )
+    ) {
       deleteCattle(cow.id);
       if (selectedCow?.id === cow.id) {
         setSelectedCow(null);
@@ -233,15 +232,6 @@ export const CattleView: React.FC<CattleViewProps> = ({ onNavigateToAi }) => {
         </div>
 
         <div className="flex items-center gap-2.5">
-          {onNavigateToAi && (
-            <button
-              onClick={onNavigateToAi}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white transition-colors shadow-xs cursor-pointer"
-            >
-              <Sparkles className="w-4 h-4 text-emerald-200" />
-              <span>AI Milk & Health Optimizer</span>
-            </button>
-          )}
           <button
             onClick={handleOpenAddModal}
             className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white transition-colors shadow-xs cursor-pointer"
@@ -402,15 +392,6 @@ export const CattleView: React.FC<CattleViewProps> = ({ onNavigateToAi }) => {
                     {/* Actions */}
                     <td className="py-3 px-4 text-right whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1.5">
-                        {onNavigateToAi && (
-                          <button
-                            onClick={onNavigateToAi}
-                            title="AI Health Diagnosis & Milk Maximizer"
-                            className="p-1.5 text-emerald-800 hover:text-emerald-950 hover:bg-emerald-100 rounded-md transition-colors cursor-pointer border border-emerald-300"
-                          >
-                            <Sparkles className="w-4 h-4 text-emerald-700" />
-                          </button>
-                        )}
                         <button
                           onClick={() => setSelectedCow(cow)}
                           title="View Full Profile & Milk Records"
@@ -560,7 +541,7 @@ export const CattleView: React.FC<CattleViewProps> = ({ onNavigateToAi }) => {
                             <span className="text-stone-400 text-[11px] ml-2">Milker: {log.milkerName}</span>
                           </div>
                           <div className="flex items-center gap-3">
-                            <span className="text-stone-600 text-[11px]">Fat: {log.fatPercentage}% · SNF: {log.snfPercentage}%</span>
+                            <span className="text-stone-600 text-[11px]">Fat: {log.fatPercentage}% · CLR: {typeof log.clr === 'number' ? log.clr : '—'} · SNF: {log.snfPercentage}%</span>
                             <span className="font-bold text-stone-900 font-mono tabular-nums">{log.liters.toFixed(1)} L</span>
                           </div>
                         </div>

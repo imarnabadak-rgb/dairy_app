@@ -9,13 +9,15 @@ import {
   Trash2, 
   Search, 
   Filter, 
-  DollarSign, 
+  IndianRupee, 
   Wheat, 
   Syringe, 
   Users, 
   Zap, 
   Fuel, 
   Package, 
+  PawPrint,
+  Pencil,
   X,
   CreditCard,
   Calendar
@@ -25,6 +27,7 @@ export const ExpensesView: React.FC = () => {
   const { 
     expenses, 
     addExpense, 
+    updateExpense,
     deleteExpense, 
     selectedDate, 
     setSelectedDate, 
@@ -34,6 +37,7 @@ export const ExpensesView: React.FC = () => {
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
 
   // Form state
   const [formData, setFormData] = useState<{
@@ -69,6 +73,8 @@ export const ExpensesView: React.FC = () => {
         return <Zap className="w-3.5 h-3.5 text-emerald-700" />;
       case 'Fuel & Equipment':
         return <Fuel className="w-3.5 h-3.5 text-emerald-700" />;
+      case 'Cow & Buffalo Purchase':
+        return <PawPrint className="w-3.5 h-3.5 text-emerald-700" />;
       default:
         return <Package className="w-3.5 h-3.5 text-emerald-700" />;
     }
@@ -87,6 +93,7 @@ export const ExpensesView: React.FC = () => {
     'Labor & Milking Staff',
     'Fuel & Equipment',
     'Electricity & Cold Storage',
+    'Cow & Buffalo Purchase',
     'Farm Misc & Supplies'
   ];
 
@@ -106,7 +113,13 @@ export const ExpensesView: React.FC = () => {
     return matchesCategory && matchesSearch;
   });
 
+  const closeExpenseModal = () => {
+    setIsAddModalOpen(false);
+    setEditingExpenseId(null);
+  };
+
   const handleOpenAdd = () => {
+    setEditingExpenseId(null);
     setFormData({
       title: '',
       category: 'Feed & Fodder',
@@ -120,11 +133,26 @@ export const ExpensesView: React.FC = () => {
     setIsAddModalOpen(true);
   };
 
+  const handleOpenEdit = (expense: FarmExpense) => {
+    setEditingExpenseId(expense.id);
+    setFormData({
+      title: expense.title,
+      category: expense.category,
+      amount: expense.amount,
+      date: expense.date,
+      vendor: expense.vendor,
+      paymentMethod: expense.paymentMethod,
+      receiptNumber: expense.receiptNumber ?? '',
+      notes: expense.notes ?? ''
+    });
+    setIsAddModalOpen(true);
+  };
+
   const handleSaveExpense = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.title.trim() || formData.amount <= 0) return;
 
-    addExpense({
+    const expensePayload: Omit<FarmExpense, 'id'> = {
       title: formData.title.trim(),
       category: formData.category,
       amount: Number(formData.amount),
@@ -133,9 +161,15 @@ export const ExpensesView: React.FC = () => {
       paymentMethod: formData.paymentMethod,
       receiptNumber: formData.receiptNumber.trim() || undefined,
       notes: formData.notes.trim() || undefined
-    });
+    };
 
-    setIsAddModalOpen(false);
+    if (editingExpenseId) {
+      updateExpense(editingExpenseId, expensePayload);
+    } else {
+      addExpense(expensePayload);
+    }
+
+    closeExpenseModal();
   };
 
   return (
@@ -168,7 +202,7 @@ export const ExpensesView: React.FC = () => {
         <div className="bg-white p-4 rounded-xl border border-neutral-200 shadow-xs">
           <div className="flex items-center justify-between text-neutral-500 text-xs font-medium mb-1">
             <span>Total Logged Expenses</span>
-            <DollarSign className="w-4 h-4 text-emerald-700" />
+            <IndianRupee className="w-4 h-4 text-emerald-700" />
           </div>
           <div className="flex items-baseline gap-1 mt-1">
             <span className="text-neutral-400 text-base">{currencySymbol}</span>
@@ -347,17 +381,26 @@ export const ExpensesView: React.FC = () => {
                   </td>
 
                   <td className="py-3 px-4 text-right">
-                    <button
-                      onClick={() => {
-                        if (window.confirm(`Delete expense "${exp.title}"?`)) {
-                          deleteExpense(exp.id);
-                        }
-                      }}
-                      className="p-1.5 text-neutral-400 hover:text-rose-600 rounded transition-colors cursor-pointer"
-                      title="Delete expense"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        onClick={() => handleOpenEdit(exp)}
+                        className="p-1.5 text-neutral-400 hover:text-emerald-700 rounded transition-colors cursor-pointer"
+                        title="Edit expense"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (window.confirm(`Delete expense "${exp.title}"?`)) {
+                            deleteExpense(exp.id);
+                          }
+                        }}
+                        className="p-1.5 text-neutral-400 hover:text-rose-600 rounded transition-colors cursor-pointer"
+                        title="Delete expense"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -379,10 +422,14 @@ export const ExpensesView: React.FC = () => {
           <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-neutral-200">
             <form onSubmit={handleSaveExpense}>
               <div className="p-5 border-b border-neutral-200 flex items-center justify-between sticky top-0 bg-white z-10">
-                <h3 className="text-base font-bold text-neutral-900">Record Farm Expense Voucher</h3>
+                <h3 className="text-base font-bold text-neutral-900">
+                  {editingExpenseId
+                    ? 'Edit Farm Expense Voucher'
+                    : 'Record Farm Expense Voucher'}
+                </h3>
                 <button
                   type="button"
-                  onClick={() => setIsAddModalOpen(false)}
+                  onClick={closeExpenseModal}
                   className="p-1.5 text-neutral-400 hover:text-neutral-700 rounded-lg cursor-pointer"
                 >
                   <X className="w-5 h-5" />
@@ -490,7 +537,7 @@ export const ExpensesView: React.FC = () => {
               <div className="p-4 border-t border-neutral-200 bg-neutral-50 flex items-center justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => setIsAddModalOpen(false)}
+                  onClick={closeExpenseModal}
                   className="px-3.5 py-1.5 text-xs font-semibold text-neutral-700 bg-white border border-neutral-200 rounded-lg hover:bg-neutral-50 cursor-pointer"
                 >
                   Cancel
@@ -499,7 +546,7 @@ export const ExpensesView: React.FC = () => {
                   type="submit"
                   className="px-4 py-1.5 text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-lg cursor-pointer shadow-xs transition-colors"
                 >
-                  Save Expense
+                  {editingExpenseId ? 'Update Expense' : 'Save Expense'}
                 </button>
               </div>
             </form>

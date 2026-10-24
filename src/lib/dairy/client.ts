@@ -170,6 +170,25 @@ export async function insertDairyRecord<T extends { id: string }>(
 }
 
 /**
+ * Permanently delete one record from a collection. This is an immediate
+ * database delete; the debounced collection sync still runs as a safety net.
+ */
+export async function deleteDairyRecord(
+  collection: DairyCollection,
+  id: string
+): Promise<void> {
+  const response = await fetch(
+    `/api/dairy/${encodeURIComponent(collection)}?id=${encodeURIComponent(id)}`,
+    { method: 'DELETE' }
+  );
+  const body = await readJson<ApiErrorBody>(response);
+
+  if (!response.ok || !body?.success) {
+    throwApiError(response, body, `Could not delete from ${collection}`);
+  }
+}
+
+/**
  * Insert records across one or more collections in a single INSERT. Used by
  * forms that create related rows (for example a customer + delivery row).
  */

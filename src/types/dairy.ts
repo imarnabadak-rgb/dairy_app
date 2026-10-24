@@ -32,6 +32,29 @@ export interface Cattle {
 
 export type MilkingSession = 'Morning' | 'Evening';
 
+export type MilkSaleSession = MilkingSession | 'Combined';
+
+export interface MilkSale {
+  id: string;
+  date: string; // YYYY-MM-DD
+  /** Customer selected from Revenue & Customers. */
+  buyerId?: string;
+  buyerName: string;
+  /** Legacy field for sales saved before buyers were linked to customers. */
+  centerName?: string;
+  session: MilkSaleSession;
+  quantityLiters: number;
+  clr?: number;
+  fatPercentage?: number;
+  snfPercentage?: number;
+  /** Buyer's base rate used for the quality-based price calculation. */
+  baseRate?: number;
+  ratePerLiter: number;
+  totalAmount: number;
+  paymentStatus: 'Paid' | 'Pending';
+  notes?: string;
+}
+
 export interface MilkLog {
   id: string;
   date: string; // YYYY-MM-DD
@@ -40,6 +63,8 @@ export interface MilkLog {
   cowTag: string;
   liters: number;
   fatPercentage: number;
+  /** Corrected Lactometer Reading (CLR), used to derive SNF. */
+  clr?: number;
   snfPercentage: number;
   qualityStatus: 'Optimal' | 'Standard' | 'Substandard' | 'Discarded';
   isWithheld: boolean; // if true, withheld from human consumption
@@ -60,6 +85,8 @@ export interface Customer {
   dailyQuotaLiters: number;
   milkType: 'Whole Cow Milk' | 'A2 Desi Milk' | 'Buffalo / High Fat';
   unitPrice: number; // per Liter
+  /** Buyer's chart base rate used by the Sales pricing formula. */
+  milkBaseRate?: number;
   balanceDue: number;
   preferredSession: 'Morning' | 'Evening' | 'Both';
   status: 'Active' | 'Paused';
@@ -88,7 +115,12 @@ export interface Invoice {
   id: string;
   customerId: string;
   customerName: string;
-  billingMonth: string; // e.g. "October 2026"
+  /** Display label for the billing period, e.g. "Oct 1 – Oct 31, 2026". */
+  billingMonth: string;
+  /** First day of the billing period (YYYY-MM-DD). */
+  billingFrom?: string;
+  /** Last day of the billing period (YYYY-MM-DD). */
+  billingTo?: string;
   totalLiters: number;
   ratePerLiter: number;
   totalAmount: number;
@@ -145,6 +177,7 @@ export type ExpenseCategory =
   | 'Labor & Milking Staff'
   | 'Fuel & Equipment'
   | 'Electricity & Cold Storage'
+  | 'Cow & Buffalo Purchase'
   | 'Farm Misc & Supplies';
 
 export interface FarmExpense {

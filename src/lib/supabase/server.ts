@@ -3,9 +3,9 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 /**
  * Server-only Supabase client.
  *
- * The browser talks to `/api/dairy` instead of Supabase directly, so a service
- * role key (if present) never reaches the client. If only the publishable /
- * anon key is available, RLS policies still apply.
+ * The browser talks to `/api/dairy` and `/api/sales` instead of Supabase
+ * directly, so a service role key (if present) never reaches the client. If
+ * only the publishable / anon key is available, RLS policies still apply.
  *
  * `SUPABASE_URL` falls back to the old `NEXT_PUBLIC_*` name so an existing
  * `.env.local` keeps working.

@@ -8,7 +8,7 @@ import {
   TrendingUp, 
   HeartPulse, 
   ShieldAlert, 
-  DollarSign, 
+  IndianRupee, 
   Wheat, 
   CheckCircle2, 
   AlertTriangle, 
@@ -134,7 +134,7 @@ export const AiAdvisorView: React.FC = () => {
       } else {
         // High-precision fallback response in green theme
         setCustomResponse({
-          directAnswer: `Based on your herd data (${cattle.length} cows, ${totalRevenue > 0 ? `$${totalRevenue.toFixed(0)}` : '$9,292'} revenue, and $${totalExpenses.toFixed(0)} operating costs): ${q.toLowerCase().includes('feed') ? 'Optimize total mixed rations with 200g rumen-bypass fat and verify dry matter moisture weekly.' : q.toLowerCase().includes('milk') ? 'Transition peak-lactation cows to 3-split feedings and increase high-protein concentrate by 1.2kg/day.' : 'Maintain strict somatic screening and segregate antibiotic withdrawal cows immediately.'}`,
+          directAnswer: `Based on your herd data (${cattle.length} cows, ${totalRevenue > 0 ? `₹${totalRevenue.toFixed(0)}` : '₹9,292'} revenue, and ₹${totalExpenses.toFixed(0)} operating costs): ${q.toLowerCase().includes('feed') ? 'Optimize total mixed rations with 200g rumen-bypass fat and verify dry matter moisture weekly.' : q.toLowerCase().includes('milk') ? 'Transition peak-lactation cows to 3-split feedings and increase high-protein concentrate by 1.2kg/day.' : 'Maintain strict somatic screening and segregate antibiotic withdrawal cows immediately.'}`,
           cowHealthRecommendations: [
             'Segregate all cows undergoing antibiotic intramammary therapy with yellow leg bands.',
             'Conduct California Mastitis Test (CMT) paddle checks weekly across all high-producing quarters.'
@@ -144,10 +144,10 @@ export const AiAdvisorView: React.FC = () => {
             'Provide fresh Lucerne green fodder to indigenous Gir & Sahiwal cattle to leverage natural rumen microbes.'
           ],
           profitAndExpenseOptimization: [
-            'Direct farm contract for corn silage in 10-ton blocks to save $0.04 per kg ($240/month savings).',
+            'Direct farm contract for corn silage in 10-ton blocks to save ₹0.04 per kg (₹240/month savings).',
             'Pre-cool fresh milk through a borehole water plate heat exchanger before compressor intake.'
           ],
-          projectedFinancialImpact: '+$420 / month in estimated net profitability improvement'
+          projectedFinancialImpact: '+₹420 / month in estimated net profitability improvement'
         });
       }
     } catch (e) {
@@ -166,7 +166,7 @@ export const AiAdvisorView: React.FC = () => {
           'Bulk order dry fodder to reduce freight costs.',
           'Bottle A2 Indigenous milk separately at a 25% premium price.'
         ],
-        projectedFinancialImpact: '+$350 / month in net margin growth'
+        projectedFinancialImpact: '+₹350 / month in net margin growth'
       });
     } finally {
       setIsQueryingCustom(false);
@@ -219,7 +219,7 @@ export const AiAdvisorView: React.FC = () => {
         {
           costCenter: 'Feed & Fodder Procurement',
           savingsMonthly: 240,
-          recommendation: 'Switch to bunker silage contracting in 10-ton blocks directly from regional field producers to shave $0.04/kg off dry matter costs.'
+          recommendation: 'Switch to bunker silage contracting in 10-ton blocks directly from regional field producers to shave ₹0.04/kg off dry matter costs.'
         },
         {
           costCenter: 'Chilling Silo Electrical Power',
@@ -236,7 +236,7 @@ export const AiAdvisorView: React.FC = () => {
         {
           initiative: 'Premium Single-Source A2 Milk Bottling',
           estimatedGain: 460,
-          description: 'Package milk from Gir (DF-104) and Sahiwal (DF-107) into distinct branded glass bottles sold at a $0.50/L premium to health-conscious households.'
+          description: 'Package milk from Gir (DF-104) and Sahiwal (DF-107) into distinct branded glass bottles sold at a ₹0.50/L premium to health-conscious households.'
         },
         {
           initiative: 'Commercial Cafe Guaranteed Barista Milk Contracts',
@@ -244,7 +244,7 @@ export const AiAdvisorView: React.FC = () => {
           description: 'Standardize whole milk butterfat at 4.2% for high-foam micro-texture and pitch to 2 nearby artisan cafes for recurring daily standing orders.'
         }
       ],
-      overallVerdict: 'The farm exhibits strong production fundamentals. By adopting precision bypass rations for top producers and launching the dedicated A2 milk premium tier, net operating margins can increase by an estimated +$1,190 / month.'
+      overallVerdict: 'The farm exhibits strong production fundamentals. By adopting precision bypass rations for top producers and launching the dedicated A2 milk premium tier, net operating margins can increase by an estimated +₹1,190 / month.'
     });
   };
 
@@ -391,7 +391,7 @@ export const AiAdvisorView: React.FC = () => {
               {customResponse.profitAndExpenseOptimization && customResponse.profitAndExpenseOptimization.length > 0 && (
                 <div className="p-3 bg-white rounded-lg border border-neutral-200">
                   <h4 className="font-bold text-emerald-950 flex items-center gap-1 mb-1.5">
-                    <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
+                    <IndianRupee className="w-3.5 h-3.5 text-emerald-600" />
                     <span>Expense & Profit Strategy</span>
                   </h4>
                   <ul className="space-y-1 text-neutral-600 text-[11px] list-disc list-inside">
@@ -472,7 +472,7 @@ export const AiAdvisorView: React.FC = () => {
           }`}
         >
           <div className="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold mb-3 border border-emerald-200">
-            <DollarSign className="w-5 h-5 text-emerald-800" />
+            <IndianRupee className="w-5 h-5 text-emerald-800" />
           </div>
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold text-emerald-950">3. Profit & Expense Auditing</h2>
@@ -640,7 +640,7 @@ export const AiAdvisorView: React.FC = () => {
 
               <div className="p-3 bg-white rounded-lg border border-neutral-200">
                 <h4 className="text-xs font-bold text-emerald-950 flex items-center gap-1.5 mb-1.5">
-                  <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
+                  <IndianRupee className="w-3.5 h-3.5 text-emerald-600" />
                   <span>Projected Cow Profit Gain</span>
                 </h4>
                 <div className="space-y-1 text-xs text-neutral-600">
@@ -903,7 +903,7 @@ export const AiAdvisorView: React.FC = () => {
               {/* Revenue Expansion */}
               <div className="bg-white rounded-xl border border-neutral-200 p-5 shadow-xs">
                 <h3 className="text-xs font-bold text-neutral-900 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                  <DollarSign className="w-4 h-4 text-emerald-700" />
+                  <IndianRupee className="w-4 h-4 text-emerald-700" />
                   <span>Revenue Growth & Margin Expansion</span>
                 </h3>
                 <div className="space-y-3">
@@ -911,7 +911,7 @@ export const AiAdvisorView: React.FC = () => {
                     {
                       initiative: 'Certified A2 Desi Bottled Milk Line',
                       estimatedGain: 460,
-                      description: 'Segregate Indigenous Gir and Sahiwal yield into premium bottled A2 milk sold at $0.50/L premium to subscribers.'
+                      description: 'Segregate Indigenous Gir and Sahiwal yield into premium bottled A2 milk sold at ₹0.50/L premium to subscribers.'
                     },
                     {
                       initiative: 'Artisan Barista Wholesale Supply',
@@ -944,7 +944,7 @@ export const AiAdvisorView: React.FC = () => {
             <span className="font-bold block mb-0.5">AI Dairy Consultant Strategic Verdict:</span>
             <p className="leading-relaxed">
               {aiReportData?.overallVerdict ||
-                'The farm exhibits exceptional production fundamentals with a strong operating margin. By adopting precision bypass rations for top producers and launching the dedicated A2 milk premium tier, net operating margins can increase by an estimated +$1,190 / month while maintaining impeccable food safety.'}
+                'The farm exhibits exceptional production fundamentals with a strong operating margin. By adopting precision bypass rations for top producers and launching the dedicated A2 milk premium tier, net operating margins can increase by an estimated +₹1,190 / month while maintaining impeccable food safety.'}
             </p>
           </div>
         </div>

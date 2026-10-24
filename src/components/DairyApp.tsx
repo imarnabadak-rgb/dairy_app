@@ -1,22 +1,23 @@
 'use client';
 
 import { useState } from 'react';
+import { Database } from 'lucide-react';
 import { DairyProvider } from '@/context/DairyContext';
 import { TopBar } from '@/components/TopBar';
 import { DashboardView } from '@/components/DashboardView';
 import { MilkProductionView } from '@/components/MilkProductionView';
+import { SalesView } from '@/components/SalesView';
 import { CattleView } from '@/components/CattleView';
-import { SupplyDeliveryView } from '@/components/SupplyDeliveryView';
 import { CustomerRevenueView } from '@/components/CustomerRevenueView';
 import { ExpensesView } from '@/components/ExpensesView';
-import { AiAdvisorView } from '@/components/AiAdvisorView';
 import { HealthVaccineView } from '@/components/HealthVaccineView';
-import { FeedTanksView } from '@/components/FeedTanksView';
 import { QuickLogModal } from '@/components/QuickLogModal';
+import { DataManagementModal } from '@/components/DataManagementModal';
 
 function DairyAppContent() {
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [isQuickLogOpen, setIsQuickLogOpen] = useState(false);
+  const [isDataManagementOpen, setIsDataManagementOpen] = useState(false);
 
   return (
     <div className="min-h-screen bg-neutral-50 text-neutral-900 flex flex-col font-sans selection:bg-emerald-600 selection:text-white">
@@ -33,26 +34,21 @@ function DairyAppContent() {
           <DashboardView
             onNavigateTab={setActiveTab}
             onOpenMilkModal={() => setActiveTab('production')}
-            onOpenSupplyModal={() => setActiveTab('supply')}
             onOpenCattleModal={() => setActiveTab('cattle')}
           />
         )}
 
         {activeTab === 'production' && <MilkProductionView />}
 
-        {activeTab === 'cattle' && <CattleView onNavigateToAi={() => setActiveTab('ai')} />}
+        {activeTab === 'sales' && <SalesView />}
 
-        {activeTab === 'ai' && <AiAdvisorView />}
-
-        {activeTab === 'supply' && <SupplyDeliveryView />}
+        {activeTab === 'cattle' && <CattleView />}
 
         {activeTab === 'customers' && <CustomerRevenueView />}
 
         {activeTab === 'expenses' && <ExpensesView />}
 
         {activeTab === 'health' && <HealthVaccineView />}
-
-        {activeTab === 'inventory' && <FeedTanksView />}
       </main>
 
       {/* Footnote */}
@@ -63,10 +59,19 @@ function DairyAppContent() {
             <span aria-hidden="true">·</span>
             <span className="text-emerald-700 font-semibold">Cold-Chain & HACCP Certified</span>
           </div>
-          <div className="flex items-center gap-4 text-neutral-400">
+          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-neutral-400">
             <span>Real-Time P&L Tracking</span>
             <span aria-hidden="true">·</span>
             <span>Food-Safe Antibiotic Withholding Enforcement</span>
+            <span aria-hidden="true">·</span>
+            <button
+              type="button"
+              onClick={() => setIsDataManagementOpen(true)}
+              className="inline-flex items-center gap-1.5 font-semibold text-neutral-500 hover:text-emerald-700 transition-colors cursor-pointer"
+            >
+              <Database className="w-3.5 h-3.5" />
+              Data &amp; Backup
+            </button>
           </div>
         </div>
       </footer>
@@ -75,6 +80,11 @@ function DairyAppContent() {
       <QuickLogModal
         isOpen={isQuickLogOpen}
         onClose={() => setIsQuickLogOpen(false)}
+      />
+
+      <DataManagementModal
+        isOpen={isDataManagementOpen}
+        onClose={() => setIsDataManagementOpen(false)}
       />
     </div>
   );

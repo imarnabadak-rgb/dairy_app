@@ -8,7 +8,6 @@ import {
   CheckCircle2, 
   Clock, 
   Plus, 
-  DollarSign, 
   Calendar,
   X,
   CreditCard
