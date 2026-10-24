@@ -27,6 +27,11 @@ import {
   insertMilkSale,
   saveMilkSales,
 } from '@/lib/sales/client';
+import {
+  isSaleInRange,
+  saleBelongsToCustomer,
+  summarizeSales,
+} from '@/lib/sales/ledger';
 import { formatDateRange, parseISODate, todayISO } from '@/lib/date';
 import {
   Cattle,
@@ -92,7 +97,7 @@ interface DairyContextType {
 
   // Invoices & Billing
   recordInvoicePayment: (invoiceId: string, amount: number) => void;
-  generateCustomerInvoice: (customerId: string, from: string, to: string) => void;
+  generateCustomerInvoice: (customerId: string, from: string, to: string) => boolean;
 
   // Expenses actions
   addExpense: (exp: Omit<FarmExpense, 'id'>) => void;
@@ -696,48 +701,130 @@ export const DairyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const recordInvoicePayment = (invoiceId: string, amount: number) => {
+    const invoice = invoices.find((inv) => inv.id === invoiceId);
+    if (!invoice || amount <= 0) return;
+
+    const newPaid = Math.min(
+      invoice.totalAmount,
+      Number((invoice.paidAmount + amount).toFixed(2))
+    );
+    const newStatus: Invoice['status'] =
+      newPaid >= invoice.totalAmount ? 'Paid' : 'Partially Paid';
+
     setInvoices((prev) =>
-      prev.map((inv) => {
-        if (inv.id === invoiceId) {
-          const newPaid = Number((inv.paidAmount + amount).toFixed(2));
-          const newStatus = newPaid >= inv.totalAmount ? 'Paid' : 'Partially Paid';
-          return { ...inv, paidAmount: newPaid, status: newStatus };
-        }
-        return inv;
-      })
+      prev.map((inv) =>
+        inv.id === invoiceId ? { ...inv, paidAmount: newPaid, status: newStatus } : inv
+      )
+    );
+
+    // The customer ledger is driven by milk-sale payment status. Once an
+    // invoice is fully collected, mark its source sales as paid too. Older
+    // invoices without linked sale ids fall back to the billed period.
+    if (newStatus !== 'Paid') return;
+
+    const customer = customers.find((c) => c.id === invoice.customerId);
+    const linkedSaleIds = new Set(invoice.saleIds ?? []);
+    const paidSaleIds = new Set(
+      sales
+        .filter((sale) => {
+          if (linkedSaleIds.size > 0) return linkedSaleIds.has(sale.id);
+          if (!customer || !invoice.billingFrom || !invoice.billingTo) return false;
+          return (
+            saleBelongsToCustomer(sale, customer) &&
+            isSaleInRange(sale, invoice.billingFrom, invoice.billingTo)
+          );
+        })
+        .map((sale) => sale.id)
+    );
+
+    if (paidSaleIds.size === 0) return;
+
+    setSales((prev) =>
+      prev.map((sale) =>
+        paidSaleIds.has(sale.id) ? { ...sale, paymentStatus: 'Paid' } : sale
+      )
     );
   };
 
-  const generateCustomerInvoice = (customerId: string, from: string, to: string) => {
+  const generateCustomerInvoice = (
+    customerId: string,
+    from: string,
+    to: string
+  ): boolean => {
     const cust = customers.find((c) => c.id === customerId);
-    if (!cust) return;
+    if (!cust) return false;
 
     const fromDate = parseISODate(from);
     const toDate = parseISODate(to);
-    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) return;
-    if (fromDate > toDate) return;
+    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) return false;
+    if (fromDate > toDate) return false;
 
-    // Inclusive day count for the selected billing period.
-    const dayCount =
-      Math.round((toDate.getTime() - fromDate.getTime()) / 86400000) + 1;
-    const approxLiters = Number((cust.dailyQuotaLiters * dayCount).toFixed(2));
-    const total = Number((approxLiters * cust.unitPrice).toFixed(2));
+    // Invoices are built from the actual milk-sale records entered in the
+    // Sales tab. The customer's quota is only a delivery target, not a bill.
+    const periodSales = sales.filter(
+      (sale) => saleBelongsToCustomer(sale, cust) && isSaleInRange(sale, from, to)
+    );
+    const summary = summarizeSales(periodSales);
+    if (summary.sales.length === 0 || summary.liters <= 0) return false;
+
     const issueDate = selectedDate || todayISO();
     const dueDate = new Date(`${issueDate}T00:00:00Z`);
     dueDate.setUTCDate(dueDate.getUTCDate() + 30);
+
+    const paidAmount = Number(summary.paidAmount.toFixed(2));
+    const totalAmount = Number(summary.totalAmount.toFixed(2));
+    const status: Invoice['status'] =
+      paidAmount >= totalAmount ? 'Paid' : paidAmount > 0 ? 'Partially Paid' : 'Pending';
+
+    const saleIds = summary.sales.map((sale) => sale.id);
+    const totalLiters = Number(summary.liters.toFixed(2));
+    const billingMonth = formatDateRange(from, to);
+
+    // Reuse an unpaid invoice for the same customer and period so refreshing
+    // the sales data does not create duplicate invoices. Invoices that already
+    // have payments recorded are left untouched.
+    const existingInvoice = invoices.find(
+      (invoice) =>
+        invoice.customerId === cust.id &&
+        invoice.billingFrom === from &&
+        invoice.billingTo === to
+    );
+
+    if (existingInvoice) {
+      if (existingInvoice.paidAmount > 0) return false;
+
+      const updatedInvoice: Invoice = {
+        ...existingInvoice,
+        customerName: cust.name,
+        billingMonth,
+        saleIds,
+        totalLiters,
+        ratePerLiter: summary.averageRatePerLiter,
+        totalAmount,
+        paidAmount,
+        status,
+      };
+      setInvoices((prev) =>
+        prev.map((invoice) =>
+          invoice.id === existingInvoice.id ? updatedInvoice : invoice
+        )
+      );
+      return true;
+    }
 
     const newInv: Invoice = {
       id: makeId('INV'),
       customerId: cust.id,
       customerName: cust.name,
-      billingMonth: formatDateRange(from, to),
+      billingMonth,
       billingFrom: from,
       billingTo: to,
-      totalLiters: approxLiters,
-      ratePerLiter: cust.unitPrice,
-      totalAmount: total,
-      paidAmount: 0,
-      status: 'Pending',
+      saleIds,
+      totalLiters,
+      ratePerLiter: summary.averageRatePerLiter,
+      totalAmount,
+      paidAmount,
+      status,
       issueDate,
       dueDate: dueDate.toISOString().slice(0, 10),
     };
@@ -746,6 +833,8 @@ export const DairyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     void insertDairyRecord('invoices', newInv).catch((error) => {
       console.error('Could not insert invoice directly; the collection sync will retry.', error);
     });
+
+    return true;
   };
 
   const addVaccineRecord = (rec: Omit<VaccineRecord, 'id'>) => {

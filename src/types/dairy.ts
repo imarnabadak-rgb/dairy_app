@@ -121,6 +121,8 @@ export interface Invoice {
   billingFrom?: string;
   /** Last day of the billing period (YYYY-MM-DD). */
   billingTo?: string;
+  /** Milk-sale records this invoice was generated from. */
+  saleIds?: string[];
   totalLiters: number;
   ratePerLiter: number;
   totalAmount: number;

@@ -1,9 +1,16 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useDairy } from '../context/DairyContext';
 import { Customer, CustomerType, Invoice } from '../types/dairy';
-import { endOfMonthISO, startOfMonthISO, todayISO } from '../lib/date';
+import {
+  getInvoiceSales,
+  isSaleInRange,
+  saleBelongsToCustomer,
+  summarizeSales,
+  type SalesSummary,
+} from '../lib/sales/ledger';
+import { addDays, endOfMonthISO, startOfMonthISO, todayISO } from '../lib/date';
 import { 
   Users, 
   IndianRupee, 
@@ -13,16 +20,20 @@ import {
   Clock, 
   X, 
   Printer, 
-  Phone, 
-  MapPin,
   Search,
-  CreditCard,
   Trash2
 } from 'lucide-react';
+
+interface CustomerLedgerRow {
+  customer: Customer;
+  invoice: Invoice | null;
+  ledger: SalesSummary;
+}
 
 export const CustomerRevenueView: React.FC = () => {
   const {
     customers,
+    sales,
     invoices,
     selectedDate,
     currencySymbol,
@@ -33,7 +44,6 @@ export const CustomerRevenueView: React.FC = () => {
     generateCustomerInvoice
   } = useDairy();
 
-  const [activeSubTab, setActiveSubTab] = useState<'customers' | 'invoices'>('customers');
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddCustomerOpen, setIsAddCustomerOpen] = useState(false);
   const [selectedInvoiceForPayment, setSelectedInvoiceForPayment] = useState<Invoice | null>(null);
@@ -74,25 +84,150 @@ export const CustomerRevenueView: React.FC = () => {
     status: 'Active'
   });
 
+  // Customer ledger and invoice figures come from the actual milk sales
+  // recorded in the Sales tab, not from delivery quotas or profile prices.
+  const customerLedger = useMemo(() => {
+    const summaries = new Map<string, SalesSummary>();
+    for (const customer of customers) {
+      summaries.set(
+        customer.id,
+        summarizeSales(
+          sales.filter((sale) => saleBelongsToCustomer(sale, customer))
+        )
+      );
+    }
+    return summaries;
+  }, [customers, sales]);
+
+  const invoicePreview = useMemo(() => {
+    if (
+      !selectedCustForInvoice ||
+      !invoiceFrom ||
+      !invoiceTo ||
+      invoiceFrom > invoiceTo
+    ) {
+      return null;
+    }
+    const customer = customers.find((c) => c.id === selectedCustForInvoice);
+    if (!customer) return null;
+
+    return summarizeSales(
+      sales.filter(
+        (sale) =>
+          saleBelongsToCustomer(sale, customer) &&
+          isSaleInRange(sale, invoiceFrom, invoiceTo)
+      )
+    );
+  }, [customers, invoiceFrom, invoiceTo, sales, selectedCustForInvoice]);
+
+  const existingInvoiceForPeriod = useMemo(() => {
+    if (!selectedCustForInvoice || !invoiceFrom || !invoiceTo) return null;
+    return (
+      invoices.find(
+        (invoice) =>
+          invoice.customerId === selectedCustForInvoice &&
+          invoice.billingFrom === invoiceFrom &&
+          invoice.billingTo === invoiceTo
+      ) ?? null
+    );
+  }, [invoices, invoiceFrom, invoiceTo, selectedCustForInvoice]);
+
+  // Invoice rows show the latest sales values, so edits in the Sales tab are
+  // reflected immediately in the ledger and on the printed receipt. Invoices
+  // without a linked sale or billing range keep their stored snapshot.
+  const resolvedInvoices = useMemo(() => {
+    const customerById = new Map(customers.map((customer) => [customer.id, customer]));
+
+    return invoices.map((invoice) => {
+      const customer = customerById.get(invoice.customerId);
+      const periodSales = getInvoiceSales(invoice, customer, sales);
+      if (periodSales.length === 0) return invoice;
+
+      const summary = summarizeSales(periodSales);
+      if (summary.liters <= 0) return invoice;
+
+      const totalAmount = Number(summary.totalAmount.toFixed(2));
+      const paidAmount = Math.min(
+        totalAmount,
+        Number(Math.max(invoice.paidAmount, summary.paidAmount).toFixed(2))
+      );
+      const status: Invoice['status'] =
+        paidAmount >= totalAmount
+          ? 'Paid'
+          : paidAmount > 0
+          ? 'Partially Paid'
+          : invoice.status === 'Overdue'
+          ? 'Overdue'
+          : 'Pending';
+
+      return {
+        ...invoice,
+        saleIds: summary.sales.map((sale) => sale.id),
+        totalLiters: Number(summary.liters.toFixed(2)),
+        ratePerLiter: summary.averageRatePerLiter,
+        totalAmount,
+        paidAmount,
+        status,
+      };
+    });
+  }, [customers, invoices, sales]);
+
+  // One unified log row per customer invoice, plus a row for customers who do
+  // not have an invoice yet. Customer ledger values repeat across their
+  // invoice rows so the log keeps every detail in a single table.
+  const customerLogRows = useMemo<CustomerLedgerRow[]>(() => {
+    const rows: CustomerLedgerRow[] = [];
+
+    for (const customer of customers) {
+      const ledger = customerLedger.get(customer.id) ?? summarizeSales([]);
+      const customerInvoices = resolvedInvoices
+        .filter((invoice) => invoice.customerId === customer.id)
+        .sort((a, b) =>
+          (b.billingTo ?? b.issueDate).localeCompare(a.billingTo ?? a.issueDate)
+        );
+
+      if (customerInvoices.length === 0) {
+        rows.push({ customer, invoice: null, ledger });
+      } else {
+        for (const invoice of customerInvoices) {
+          rows.push({ customer, invoice, ledger });
+        }
+      }
+    }
+
+    return rows;
+  }, [customerLedger, customers, resolvedInvoices]);
+
   // Calculate totals
-  const totalReceivables = customers.reduce((acc, c) => acc + c.balanceDue, 0);
-  const totalBilledThisPeriod = invoices.reduce((acc, inv) => acc + inv.totalAmount, 0);
-  const totalCollectedInvoices = invoices.reduce((acc, inv) => acc + inv.paidAmount, 0);
-
-  // Filtered lists
-  const filteredCustomers = customers.filter(
-    (c) =>
-      c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.route.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.address.toLowerCase().includes(searchQuery.toLowerCase())
+  const totalReceivables = customers.reduce(
+    (acc, customer) => acc + (customerLedger.get(customer.id)?.outstanding ?? 0),
+    0
+  );
+  const totalBilledThisPeriod = resolvedInvoices.reduce(
+    (acc, inv) => acc + inv.totalAmount,
+    0
+  );
+  const totalCollectedInvoices = resolvedInvoices.reduce(
+    (acc, inv) => acc + inv.paidAmount,
+    0
   );
 
-  const filteredInvoices = invoices.filter(
-    (inv) =>
-      inv.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      inv.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      inv.billingMonth.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredLogRows = customerLogRows.filter(({ customer, invoice }) => {
+    const query = searchQuery.toLowerCase();
+    return (
+      customer.name.toLowerCase().includes(query) ||
+      customer.customerType.toLowerCase().includes(query) ||
+      customer.milkType.toLowerCase().includes(query) ||
+      customer.route.toLowerCase().includes(query) ||
+      customer.address.toLowerCase().includes(query) ||
+      customer.phone.toLowerCase().includes(query) ||
+      (invoice
+        ? invoice.id.toLowerCase().includes(query) ||
+          invoice.customerName.toLowerCase().includes(query) ||
+          invoice.billingMonth.toLowerCase().includes(query)
+        : false)
+    );
+  });
 
   const handleSaveCustomer = (e: React.FormEvent) => {
     e.preventDefault();
@@ -140,9 +275,10 @@ export const CustomerRevenueView: React.FC = () => {
             invoiceCount === 1 ? '' : 's'
           }`
         : 'all related delivery logs';
+    const ledgerBalance = customerLedger.get(customer.id)?.outstanding ?? 0;
     const balanceWarning =
-      customer.balanceDue > 0
-        ? `\n\nOutstanding balance: ${currencySymbol}${customer.balanceDue.toFixed(2)}.`
+      ledgerBalance > 0
+        ? `\n\nOutstanding sales balance: ${currencySymbol}${ledgerBalance.toFixed(2)}.`
         : '';
 
     if (
@@ -178,9 +314,47 @@ export const CustomerRevenueView: React.FC = () => {
       return;
     }
 
+    if (existingInvoiceForPeriod && existingInvoiceForPeriod.paidAmount > 0) {
+      setInvoiceDateError(
+        'This billing period already has an invoice with payments recorded. Choose a different period.'
+      );
+      return;
+    }
+
+    if (!invoicePreview || invoicePreview.liters <= 0) {
+      setInvoiceDateError(
+        'No milk sales were recorded for this customer in the selected period.'
+      );
+      return;
+    }
+
     setInvoiceDateError('');
-    generateCustomerInvoice(selectedCustForInvoice, invoiceFrom, invoiceTo);
+    const generated = generateCustomerInvoice(
+      selectedCustForInvoice,
+      invoiceFrom,
+      invoiceTo
+    );
+    if (!generated) {
+      setInvoiceDateError(
+        'No milk sales were recorded for this customer in the selected period.'
+      );
+      return;
+    }
     setIsGenerateInvoiceOpen(false);
+  };
+
+  const selectToday = () => {
+    const anchor = selectedDate || todayISO();
+    setInvoiceFrom(anchor);
+    setInvoiceTo(anchor);
+    setInvoiceDateError('');
+  };
+
+  const selectLast10Days = () => {
+    const anchor = selectedDate || todayISO();
+    setInvoiceFrom(addDays(anchor, -9));
+    setInvoiceTo(anchor);
+    setInvoiceDateError('');
   };
 
   const selectThisMonth = () => {
@@ -213,7 +387,7 @@ export const CustomerRevenueView: React.FC = () => {
             Customer Directory & Financial Revenue
           </h1>
           <p className="text-xs text-stone-500">
-            Subscriber management, route quotas, billing periods, payment ledger & receivables
+            Subscriber management, route quotas, sales ledger, invoices & receivables
           </p>
         </div>
 
@@ -281,41 +455,27 @@ export const CustomerRevenueView: React.FC = () => {
             </span>
           </div>
           <span className="text-[11px] text-stone-400 mt-1 block">
-            Pending customer ledger balances
+            Pending balances from recorded milk sales
           </span>
         </div>
       </div>
 
-      {/* Sub-tab Navigation (Customers vs Invoices) */}
-      <div className="flex items-center justify-between border-b border-stone-200 pb-2">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setActiveSubTab('customers')}
-            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
-              activeSubTab === 'customers'
-                ? 'bg-emerald-700 text-white shadow-xs'
-                : 'text-stone-600 hover:text-stone-900 bg-stone-100'
-            }`}
-          >
-            Customer Accounts ({customers.length})
-          </button>
-          <button
-            onClick={() => setActiveSubTab('invoices')}
-            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
-              activeSubTab === 'invoices'
-                ? 'bg-emerald-700 text-white shadow-xs'
-                : 'text-stone-600 hover:text-stone-900 bg-stone-100'
-            }`}
-          >
-            Billing Invoices & Ledger ({invoices.length})
-          </button>
+      {/* Merged customer accounts, invoices & ledger log */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-200 pb-2">
+        <div>
+          <h2 className="text-sm font-bold text-stone-900">Customer & Billing Ledger</h2>
+          <p className="text-[11px] text-stone-500">
+            {customers.length} customer{customers.length === 1 ? '' : 's'} ·{' '}
+            {resolvedInvoices.length} invoice
+            {resolvedInvoices.length === 1 ? '' : 's'} · {customerLogRows.length} log row
+            {customerLogRows.length === 1 ? '' : 's'}
+          </p>
         </div>
-
-        <div className="relative min-w-[220px]">
+        <div className="relative w-full sm:w-auto sm:min-w-[260px]">
           <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Search name, route, invoice #..."
+            placeholder="Search customer, phone, route, invoice #..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-stone-200 bg-stone-50/50 focus:outline-hidden focus:border-emerald-600 focus:bg-white"
@@ -323,205 +483,209 @@ export const CustomerRevenueView: React.FC = () => {
         </div>
       </div>
 
-      {/* View 1: Customers Table */}
-      {activeSubTab === 'customers' && (
-        <div className="bg-white rounded-xl border border-stone-200 shadow-xs overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-stone-50 border-b border-stone-200 text-stone-600 font-semibold uppercase tracking-wider text-[11px]">
-                <tr>
-                  <th className="py-3 px-4">Customer Name</th>
-                  <th className="py-3 px-4">Type / Classification</th>
-                  <th className="py-3 px-4">Route & Address</th>
-                  <th className="py-3 px-4">Phone / Contact</th>
-                  <th className="py-3 px-4 text-right">Daily Quota</th>
-                  <th className="py-3 px-4 text-right">Rate / Liter</th>
-                  <th className="py-3 px-4 text-right">Ledger Balance</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-stone-100 text-stone-700">
-                {filteredCustomers.map((cust) => {
-                  const hasDue = cust.balanceDue > 0;
+      {/* Unified customer, invoice and ledger log */}
+      <div className="bg-white rounded-xl border border-stone-200 shadow-xs overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-stone-50 border-b border-stone-200 text-stone-600 font-semibold uppercase tracking-wider text-[11px]">
+              <tr>
+                <th className="py-3 px-4">Customer</th>
+                <th className="py-3 px-4">Contact & Route</th>
+                <th className="py-3 px-4 text-right">Total Milk Sale</th>
+                <th className="py-3 px-4 text-right">Ledger Balance</th>
+                <th className="py-3 px-4">Invoice & Billing Period</th>
+                <th className="py-3 px-4 text-right">Invoice Volume / Rate</th>
+                <th className="py-3 px-4 text-right">Total Billed</th>
+                <th className="py-3 px-4">Paid / Status</th>
+                <th className="py-3 px-4 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-stone-100 text-stone-700">
+              {filteredLogRows.map(({ customer, invoice, ledger }) => {
+                const hasDue = ledger.outstanding > 0;
+                const isPaid = invoice?.status === 'Paid';
+                const balanceRemaining = invoice
+                  ? Math.max(0, invoice.totalAmount - invoice.paidAmount)
+                  : 0;
 
-                  return (
-                    <tr key={cust.id} className="hover:bg-stone-50/70 transition-colors">
-                      <td className="py-3 px-4">
-                        <p className="font-bold text-stone-900 text-xs">{cust.name}</p>
-                        <span className="text-[11px] text-stone-400">{cust.milkType}</span>
-                      </td>
+                return (
+                  <tr
+                    key={`${customer.id}-${invoice?.id ?? 'no-invoice'}`}
+                    className="hover:bg-stone-50/70 transition-colors"
+                  >
+                    <td className="py-3 px-4">
+                      <p className="font-bold text-stone-900 text-xs">{customer.name}</p>
+                      <p className="text-[11px] text-stone-400">
+                        {customer.customerType} · {customer.milkType}
+                      </p>
+                    </td>
 
-                      <td className="py-3 px-4">
-                        <span className="font-medium text-stone-800">{cust.customerType}</span>
-                      </td>
+                    <td className="py-3 px-4">
+                      <p className="text-stone-600 font-mono">{customer.phone}</p>
+                      <p className="text-stone-800 font-medium">{customer.route}</p>
+                      <p
+                        className="text-[11px] text-stone-400 truncate max-w-[200px]"
+                        title={customer.address}
+                      >
+                        {customer.address}
+                      </p>
+                    </td>
 
-                      <td className="py-3 px-4">
-                        <p className="text-stone-800 font-medium">{cust.route}</p>
-                        <p className="text-[11px] text-stone-400 truncate max-w-[200px]" title={cust.address}>
-                          {cust.address}
-                        </p>
-                      </td>
+                    <td className="py-3 px-4 text-right font-mono font-bold text-stone-900 tabular-nums">
+                      {ledger.liters.toFixed(1)} L
+                      <p className="text-[10px] font-normal text-stone-400">
+                        {ledger.sales.length === 0
+                          ? 'No sales yet'
+                          : `${ledger.sales.length} sale${
+                              ledger.sales.length === 1 ? '' : 's'
+                            }`}
+                      </p>
+                    </td>
 
-                      <td className="py-3 px-4 text-stone-600 font-mono">
-                        {cust.phone}
-                      </td>
+                    <td
+                      className="py-3 px-4 text-right font-mono tabular-nums"
+                      title={
+                        ledger.sales.length > 0
+                          ? `${currencySymbol}${ledger.totalAmount.toFixed(2)} sold · ${currencySymbol}${ledger.paidAmount.toFixed(2)} paid`
+                          : 'No milk sales recorded yet'
+                      }
+                    >
+                      <span
+                        className={`font-bold ${
+                          hasDue ? 'text-amber-800' : 'text-emerald-700'
+                        }`}
+                      >
+                        {currencySymbol}
+                        {ledger.outstanding.toFixed(2)}
+                      </span>
+                      <p className="text-[10px] text-stone-400">
+                        {ledger.sales.length === 0
+                          ? 'No sales yet'
+                          : `${currencySymbol}${ledger.paidAmount.toFixed(2)} paid`}
+                      </p>
+                    </td>
 
-                      <td className="py-3 px-4 text-right font-mono font-bold text-stone-900 tabular-nums">
-                        {cust.dailyQuotaLiters.toFixed(1)} L
-                      </td>
-
-                      <td className="py-3 px-4 text-right font-mono text-stone-700 tabular-nums">
-                        <p>{currencySymbol}{cust.unitPrice.toFixed(2)}</p>
-                        {cust.milkBaseRate != null && (
-                          <p className="text-[10px] text-stone-400">
-                            Base {currencySymbol}{cust.milkBaseRate.toFixed(2)}
+                    <td className="py-3 px-4">
+                      {invoice ? (
+                        <>
+                          <p className="font-mono font-bold text-stone-900">{invoice.id}</p>
+                          <p className="text-[11px] text-stone-500">
+                            {invoice.billingMonth}
                           </p>
-                        )}
-                      </td>
-
-                      <td className="py-3 px-4 text-right font-mono tabular-nums">
-                        <span className={`font-bold ${hasDue ? 'text-amber-800' : 'text-emerald-700'}`}>
-                          {currencySymbol}{cust.balanceDue.toFixed(2)}
-                        </span>
-                      </td>
-
-                      <td className="py-3 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            onClick={() => openGenerateInvoice(cust.id)}
-                            className="px-2.5 py-1 text-[11px] font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded border border-emerald-200 cursor-pointer"
-                          >
-                            Invoice &rarr;
-                          </button>
-                          <button
-                            onClick={() => handleDeleteCustomer(cust)}
-                            title="Delete customer"
-                            aria-label={`Delete ${cust.name}`}
-                            className="p-1.5 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded border border-transparent hover:border-rose-200 transition-colors cursor-pointer"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {filteredCustomers.length === 0 && (
-            <div className="py-12 text-center text-stone-500">
-              <p className="text-sm font-semibold">No customers found</p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* View 2: Invoices & Ledger Table */}
-      {activeSubTab === 'invoices' && (
-        <div className="bg-white rounded-xl border border-stone-200 shadow-xs overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-stone-50 border-b border-stone-200 text-stone-600 font-semibold uppercase tracking-wider text-[11px]">
-                <tr>
-                  <th className="py-3 px-4">Invoice #</th>
-                  <th className="py-3 px-4">Customer</th>
-                  <th className="py-3 px-4">Billing Period</th>
-                  <th className="py-3 px-4 text-right">Total Liters</th>
-                  <th className="py-3 px-4 text-right">Rate / L</th>
-                  <th className="py-3 px-4 text-right">Total Billed</th>
-                  <th className="py-3 px-4 text-right">Paid</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-stone-100 text-stone-700">
-                {filteredInvoices.map((inv) => {
-                  const isPaid = inv.status === 'Paid';
-                  const balanceRemaining = inv.totalAmount - inv.paidAmount;
-
-                  return (
-                    <tr key={inv.id} className="hover:bg-stone-50/70 transition-colors">
-                      <td className="py-3 px-4 font-mono font-bold text-stone-900">
-                        {inv.id}
-                      </td>
-
-                      <td className="py-3 px-4 font-bold text-stone-900">
-                        {inv.customerName}
-                      </td>
-
-                      <td className="py-3 px-4 text-stone-600">
-                        {inv.billingMonth}
-                      </td>
-
-                      <td className="py-3 px-4 text-right font-mono tabular-nums">
-                        {inv.totalLiters} L
-                      </td>
-
-                      <td className="py-3 px-4 text-right font-mono tabular-nums text-stone-600">
-                        {currencySymbol}{inv.ratePerLiter.toFixed(2)}
-                      </td>
-
-                      <td className="py-3 px-4 text-right font-mono font-bold text-stone-900 tabular-nums">
-                        {currencySymbol}{inv.totalAmount.toFixed(2)}
-                      </td>
-
-                      <td className="py-3 px-4 text-right font-mono tabular-nums text-emerald-800 font-semibold">
-                        {currencySymbol}{inv.paidAmount.toFixed(2)}
-                      </td>
-
-                      <td className="py-3 px-4">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold ${
-                            isPaid
-                              ? 'bg-emerald-100 text-emerald-900'
-                              : inv.status === 'Partially Paid'
-                              ? 'bg-sky-100 text-sky-900'
-                              : 'bg-amber-100 text-amber-900'
-                          }`}
-                        >
-                          {isPaid ? <CheckCircle2 className="w-3 h-3 text-emerald-700" /> : <Clock className="w-3 h-3" />}
-                          <span>{inv.status}</span>
-                        </span>
-                      </td>
-
-                      <td className="py-3 px-4 text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {!isPaid && (
-                            <button
-                              onClick={() => {
-                                setSelectedInvoiceForPayment(inv);
-                                setPaymentAmount(balanceRemaining);
-                              }}
-                              className="px-2 py-1 text-[11px] font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded transition-colors cursor-pointer shadow-xs"
-                            >
-                              Collect
-                            </button>
+                          {invoice.saleIds && invoice.saleIds.length > 0 && (
+                            <p className="text-[10px] text-stone-400">
+                              From {invoice.saleIds.length} milk sale
+                              {invoice.saleIds.length === 1 ? '' : 's'}
+                            </p>
                           )}
+                        </>
+                      ) : (
+                        <span className="text-stone-400">No invoice yet</span>
+                      )}
+                    </td>
+
+                    <td className="py-3 px-4 text-right font-mono tabular-nums">
+                      {invoice ? (
+                        <>
+                          <p className="font-bold text-stone-900">
+                            {invoice.totalLiters} L
+                          </p>
+                          <p className="text-[10px] text-stone-400">
+                            {currencySymbol}
+                            {invoice.ratePerLiter.toFixed(2)}/L avg
+                          </p>
+                        </>
+                      ) : (
+                        <span className="text-stone-400">—</span>
+                      )}
+                    </td>
+
+                    <td className="py-3 px-4 text-right font-mono font-bold text-stone-900 tabular-nums">
+                      {invoice
+                        ? `${currencySymbol}${invoice.totalAmount.toFixed(2)}`
+                        : '—'}
+                    </td>
+
+                    <td className="py-3 px-4">
+                      {invoice ? (
+                        <>
+                          <p className="font-mono tabular-nums text-emerald-800 font-semibold">
+                            {currencySymbol}
+                            {invoice.paidAmount.toFixed(2)}
+                          </p>
+                          <span
+                            className={`mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold ${
+                              isPaid
+                                ? 'bg-emerald-100 text-emerald-900'
+                                : invoice.status === 'Partially Paid'
+                                ? 'bg-sky-100 text-sky-900'
+                                : 'bg-amber-100 text-amber-900'
+                            }`}
+                          >
+                            {isPaid ? (
+                              <CheckCircle2 className="w-3 h-3 text-emerald-700" />
+                            ) : (
+                              <Clock className="w-3 h-3" />
+                            )}
+                            <span>{invoice.status}</span>
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-stone-400">—</span>
+                      )}
+                    </td>
+
+                    <td className="py-3 px-4 text-right whitespace-nowrap">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => openGenerateInvoice(customer.id)}
+                          className="px-2.5 py-1 text-[11px] font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded border border-emerald-200 cursor-pointer"
+                        >
+                          Invoice
+                        </button>
+                        {invoice && !isPaid && (
                           <button
-                            onClick={() => setSelectedInvoiceToPrint(inv)}
+                            onClick={() => {
+                              setSelectedInvoiceForPayment(invoice);
+                              setPaymentAmount(balanceRemaining);
+                            }}
+                            className="px-2 py-1 text-[11px] font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded transition-colors cursor-pointer shadow-xs"
+                          >
+                            Collect
+                          </button>
+                        )}
+                        {invoice && (
+                          <button
+                            onClick={() => setSelectedInvoiceToPrint(invoice)}
                             className="p-1 text-stone-500 hover:text-stone-900 hover:bg-stone-100 rounded transition-colors cursor-pointer"
                             title="Preview / Print Voucher"
                           >
                             <Printer className="w-4 h-4" />
                           </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {filteredInvoices.length === 0 && (
-            <div className="py-12 text-center text-stone-500">
-              <p className="text-sm font-semibold">No invoices match your search</p>
-            </div>
-          )}
+                        )}
+                        <button
+                          onClick={() => handleDeleteCustomer(customer)}
+                          title="Delete customer"
+                          aria-label={`Delete ${customer.name}`}
+                          className="p-1.5 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded border border-transparent hover:border-rose-200 transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-      )}
+
+        {filteredLogRows.length === 0 && (
+          <div className="py-12 text-center text-stone-500">
+            <p className="text-sm font-semibold">No customers or invoices match your search</p>
+          </div>
+        )}
+      </div>
 
       {/* Record Payment Modal */}
       {selectedInvoiceForPayment && (
@@ -651,13 +815,22 @@ export const CustomerRevenueView: React.FC = () => {
                   <tr className="text-stone-500 font-semibold border-b border-stone-200">
                     <th className="py-2">Description</th>
                     <th className="py-2 text-right">Volume</th>
-                    <th className="py-2 text-right">Unit Rate</th>
+                    <th className="py-2 text-right">Avg Rate</th>
                     <th className="py-2 text-right">Amount</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-stone-100">
                   <tr>
-                    <td className="py-2 font-medium">Farm Fresh Chilled Milk Supply</td>
+                    <td className="py-2 font-medium">
+                      Farm Fresh Chilled Milk Sales
+                      {selectedInvoiceToPrint.saleIds &&
+                        selectedInvoiceToPrint.saleIds.length > 0 && (
+                          <span className="block text-[10px] font-normal text-stone-400">
+                            {selectedInvoiceToPrint.saleIds.length} recorded sale
+                            {selectedInvoiceToPrint.saleIds.length === 1 ? '' : 's'}
+                          </span>
+                        )}
+                    </td>
                     <td className="py-2 text-right font-mono">{selectedInvoiceToPrint.totalLiters} L</td>
                     <td className="py-2 text-right font-mono">{currencySymbol}{selectedInvoiceToPrint.ratePerLiter.toFixed(2)}</td>
                     <td className="py-2 text-right font-mono font-bold">{currencySymbol}{selectedInvoiceToPrint.totalAmount.toFixed(2)}</td>
@@ -714,27 +887,46 @@ export const CustomerRevenueView: React.FC = () => {
                   <label className="block text-stone-700 font-semibold mb-1">Customer Account *</label>
                   <select
                     value={selectedCustForInvoice}
-                    onChange={(e) => setSelectedCustForInvoice(e.target.value)}
+                    onChange={(e) => {
+                      setSelectedCustForInvoice(e.target.value);
+                      setInvoiceDateError('');
+                    }}
                     className="w-full px-3 py-2 rounded-lg border border-stone-300 bg-white"
                   >
                     {customers.map((c) => (
                       <option key={c.id} value={c.id}>
-                        {c.name} ({c.dailyQuotaLiters}L/day @ {currencySymbol}{c.unitPrice}/L)
+                        {c.name} · {c.customerType}
                       </option>
                     ))}
                   </select>
                 </div>
 
                 <div>
-                  <div className="flex items-center justify-between mb-1">
+                  <div className="flex flex-wrap items-center justify-between gap-1.5 mb-1">
                     <label className="block text-stone-700 font-semibold">Billing Period</label>
-                    <button
-                      type="button"
-                      onClick={selectThisMonth}
-                      className="px-2 py-0.5 text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded hover:bg-emerald-100 cursor-pointer"
-                    >
-                      This month
-                    </button>
+                    <div className="flex flex-wrap items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={selectToday}
+                        className="px-2 py-0.5 text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded hover:bg-emerald-100 cursor-pointer whitespace-nowrap"
+                      >
+                        Today
+                      </button>
+                      <button
+                        type="button"
+                        onClick={selectLast10Days}
+                        className="px-2 py-0.5 text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded hover:bg-emerald-100 cursor-pointer whitespace-nowrap"
+                      >
+                        Last 10 days
+                      </button>
+                      <button
+                        type="button"
+                        onClick={selectThisMonth}
+                        className="px-2 py-0.5 text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded hover:bg-emerald-100 cursor-pointer whitespace-nowrap"
+                      >
+                        This month
+                      </button>
+                    </div>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
@@ -768,6 +960,69 @@ export const CustomerRevenueView: React.FC = () => {
                     <p className="mt-1.5 text-[11px] text-rose-600">{invoiceDateError}</p>
                   )}
                 </div>
+
+                {invoicePreview && invoicePreview.sales.length > 0 && (
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-3 space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px] text-stone-600">
+                      <span>Recorded sales</span>
+                      <span className="font-mono font-semibold text-stone-900">
+                        {invoicePreview.sales.length}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] text-stone-600">
+                      <span>Milk volume</span>
+                      <span className="font-mono font-semibold text-stone-900">
+                        {invoicePreview.liters.toFixed(2)} L
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] text-stone-600">
+                      <span>Weighted avg rate</span>
+                      <span className="font-mono font-semibold text-stone-900">
+                        {currencySymbol}{invoicePreview.averageRatePerLiter.toFixed(2)}/L
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between border-t border-emerald-200 pt-1.5 text-[11px]">
+                      <span className="font-semibold text-stone-700">Invoice total</span>
+                      <span className="font-mono font-bold text-emerald-900">
+                        {currencySymbol}{invoicePreview.totalAmount.toFixed(2)}
+                      </span>
+                    </div>
+                    {invoicePreview.paidAmount > 0 && (
+                      <div className="flex items-center justify-between text-[11px] text-emerald-800">
+                        <span>Already paid in Sales</span>
+                        <span className="font-mono font-semibold">
+                          {currencySymbol}{invoicePreview.paidAmount.toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {existingInvoiceForPeriod &&
+                  existingInvoiceForPeriod.paidAmount > 0 && (
+                    <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] text-rose-900">
+                      An invoice for this period already has {currencySymbol}
+                      {existingInvoiceForPeriod.paidAmount.toFixed(2)} in recorded
+                      payments. Choose a different billing period.
+                    </p>
+                  )}
+
+                {existingInvoiceForPeriod &&
+                  existingInvoiceForPeriod.paidAmount === 0 &&
+                  invoicePreview &&
+                  invoicePreview.sales.length > 0 && (
+                    <p className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] text-sky-900">
+                      This period already has an invoice. Generating again will
+                      refresh it from the current milk-sale records.
+                    </p>
+                  )}
+
+                {invoicePreview && invoicePreview.sales.length === 0 && (
+                  <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
+                    No milk sales found for this customer in the selected period.
+                    Record the sale in the Sales tab first, then generate the invoice.
+                  </p>
+                )}
               </div>
 
               <div className="p-4 border-t border-stone-200 bg-stone-50 flex items-center justify-end gap-2">
@@ -780,9 +1035,20 @@ export const CustomerRevenueView: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 text-xs font-semibold text-white bg-emerald-700 rounded-lg hover:bg-emerald-800 cursor-pointer"
+                  disabled={
+                    !invoicePreview ||
+                    invoicePreview.liters <= 0 ||
+                    Boolean(
+                      existingInvoiceForPeriod && existingInvoiceForPeriod.paidAmount > 0
+                    )
+                  }
+                  className="px-4 py-1.5 text-xs font-semibold text-white bg-emerald-700 rounded-lg hover:bg-emerald-800 cursor-pointer disabled:cursor-not-allowed disabled:bg-stone-300"
                 >
-                  Generate & Add to Ledger
+                  {existingInvoiceForPeriod && existingInvoiceForPeriod.paidAmount > 0
+                    ? 'Invoice Has Payments'
+                    : existingInvoiceForPeriod
+                    ? 'Update Invoice from Sales'
+                    : 'Generate from Sales'}
                 </button>
               </div>
             </form>

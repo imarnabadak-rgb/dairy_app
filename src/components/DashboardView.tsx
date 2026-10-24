@@ -117,6 +117,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [chartMode, setChartMode] = useState<'yield' | 'quality'>('quality');
 
   const periodAnchor = selectedDate || todayISO();
+  // The dashboard no longer surfaces the two legacy demo silos. Other tanks
+  // added to the farm data still appear in the Bulk Milk Silos card.
+  const dashboardTanks = tanks.filter(
+    (tank) => tank.id !== 'tank-1' && tank.id !== 'tank-2'
+  );
   const availableDates = [
     ...milkLogs.map((m) => m.date),
     ...supplyLogs.map((s) => s.date),
@@ -190,9 +195,30 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   // The route sheet stays anchored to the operational date in the top bar.
   const todaySupply = supplyLogs.filter((s) => s.date === selectedDate);
+  const deliveredTodayCount = todaySupply.filter(
+    (s) => s.deliveryStatus === 'Delivered'
+  ).length;
+  const todayRouteLiters = todaySupply.reduce(
+    (acc, s) => acc + s.quantityLiters,
+    0
+  );
+  const todayRouteValue = todaySupply.reduce(
+    (acc, s) => acc + s.totalAmount,
+    0
+  );
 
   // Cattle counts
-  const lactatingCount = cattle.filter((c) => c.status === 'Lactating').length;
+  const lactatingCattle = cattle.filter((c) => c.status === 'Lactating');
+  const topLactatingCattle = [...lactatingCattle]
+    .sort((a, b) => b.avgDailyYield - a.avgDailyYield)
+    .slice(0, 5);
+  const totalLactatingYield = lactatingCattle.reduce(
+    (acc, c) => acc + c.avgDailyYield,
+    0
+  );
+  const avgLactatingYield =
+    lactatingCattle.length > 0 ? totalLactatingYield / lactatingCattle.length : 0;
+  const lactatingCount = lactatingCattle.length;
   const pregnantCount = cattle.filter((c) => c.status === 'Pregnant').length;
   const dryCount = cattle.filter((c) => c.status === 'Dry').length;
   const otherCount = cattle.length - lactatingCount - pregnantCount - dryCount;
@@ -202,6 +228,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const upcomingVaccines = vaccines
     .filter((v) => v.status === 'Scheduled')
     .sort((a, b) => parseISODate(a.nextDueDate).getTime() - parseISODate(b.nextDueDate).getTime());
+  const scheduledVaccineCount = upcomingVaccines.length;
+  const completedVaccineCount = vaccines.filter(
+    (v) => v.status === 'Completed'
+  ).length;
 
   // Rolling 7-day production trend for the chart
   const last7Days = lastNDates(periodAnchor, 7);
@@ -249,6 +279,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const chartAvgSnf = chartQualityLogs.length > 0
     ? chartQualityLogs.reduce((acc, m) => acc + m.snfPercentage, 0) / chartQualityLogs.length
     : 0;
+  const hasChartData =
+    chartMode === 'quality'
+      ? dailyTrendData.some((d) => d.fat !== null || d.snf !== null)
+      : dailyTrendData.some((d) => d.total > 0);
 
   return (
     <div className="space-y-6">
@@ -575,10 +609,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
-      {/* Main Grid: Trends Chart & Silo Tanks */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left 2 Cols: 7-Day Production Bar Chart & Balance */}
-        <div className="lg:col-span-2 bg-white rounded-xl border border-neutral-200 p-5 shadow-xs flex flex-col justify-between">
+      {/* 7-Day Production Trend */}
+      <div className="bg-white rounded-xl border border-neutral-200 p-5 shadow-xs flex flex-col justify-between">
           <div>
             <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-4">
               <div>
@@ -647,8 +679,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
 
             {/* Trend Bar Chart */}
-            <div className="h-64 w-full flex items-end justify-between gap-2 sm:gap-4 pt-4 pb-2 border-b border-neutral-100">
-              {dailyTrendData.map((d) => {
+            <div
+              className={`${hasChartData ? 'h-64' : 'h-48'} w-full max-w-5xl mx-auto pt-4 pb-2 border-b border-neutral-100 ${
+                hasChartData
+                  ? 'flex items-end justify-between gap-2 sm:gap-4'
+                  : 'flex flex-col items-center justify-center text-center'
+              }`}
+            >
+              {hasChartData && dailyTrendData.map((d) => {
                 const totalHeight = Math.max(12, (d.total / maxTrendYield) * 180);
                 const morningPct = d.total > 0 ? (d.morning / d.total) * 100 : 50;
                 const eveningPct = 100 - morningPct;
@@ -688,13 +726,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         <div className="flex items-end justify-center gap-1" style={{ height: '180px' }}>
                           <div
                             style={{ height: `${fatHeight}px` }}
-                            className={`w-2.5 sm:w-3 rounded-t-sm bg-amber-500 hover:bg-amber-600 transition-colors ${
+                            className={`w-3 sm:w-4 rounded-t-sm bg-amber-500 hover:bg-amber-600 transition-colors ${
                               isSelected ? 'ring-2 ring-emerald-600 ring-offset-1' : ''
                             }`}
                           />
                           <div
                             style={{ height: `${snfHeight}px` }}
-                            className={`w-2.5 sm:w-3 rounded-t-sm bg-sky-500 hover:bg-sky-600 transition-colors ${
+                            className={`w-3 sm:w-4 rounded-t-sm bg-sky-500 hover:bg-sky-600 transition-colors ${
                               isSelected ? 'ring-2 ring-emerald-600 ring-offset-1' : ''
                             }`}
                           />
@@ -730,6 +768,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </div>
                 );
               })}
+
+              {!hasChartData && (
+                <div className="px-4">
+                  <Milk className="w-8 h-8 text-neutral-300 mx-auto mb-2" />
+                  <p className="text-sm font-semibold text-neutral-700">
+                    No {chartMode === 'quality' ? 'quality' : 'production'} records in this 7-day window
+                  </p>
+                  <p className="text-xs text-neutral-500 mt-1">
+                    Log milking yield to populate this trend.
+                  </p>
+                  <button
+                    onClick={onOpenMilkModal}
+                    className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-lg transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Log milking yield
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -771,16 +828,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
-        {/* Right 1 Col: Chilling Silos & Feed Levels */}
-        <div className="bg-white rounded-xl border border-neutral-200 p-5 shadow-xs flex flex-col justify-between space-y-4">
-          <div>
+      {/* Vaccine Watchlist */}
+      <div className="bg-white rounded-xl border border-neutral-200 p-5 shadow-xs">
+        {dashboardTanks.length > 0 && (
+          <div className="mb-4 pb-4 border-b border-neutral-200">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-base font-semibold text-neutral-900">Bulk Milk Silos</h2>
               <span className="text-xs font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">Live Chilling</span>
             </div>
 
-            <div className="space-y-4">
-              {tanks.map((tank) => {
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {dashboardTanks.map((tank) => {
                 const fillPct = Math.min(100, Math.round((tank.currentLiters / tank.capacityLiters) * 100));
                 const isTempSafe = tank.tempCelsius <= 4.0;
 
@@ -812,48 +870,59 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               })}
             </div>
           </div>
+        )}
 
-          {/* Quick Veterinary & Health Snapshot */}
-          <div className="pt-3 border-t border-neutral-200">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold text-neutral-800">Vaccine Watchlist</span>
-              <button
-                onClick={() => onNavigateTab('health')}
-                className="text-xs text-emerald-800 font-bold hover:underline cursor-pointer"
-              >
-                Schedule &rarr;
-              </button>
-            </div>
-            {upcomingVaccines.length > 0 ? (
-              <div className="space-y-2">
-                {upcomingVaccines.slice(0, 2).map((v) => (
-                  <div key={v.id} className="text-xs p-2 bg-neutral-50 rounded-md text-neutral-700 flex items-start justify-between gap-2 border border-neutral-200">
-                    <div>
-                      <p className="font-semibold text-neutral-900">{v.vaccineName}</p>
-                      <p className="text-[11px] text-neutral-500">Target: {v.cattleTag}</p>
-                    </div>
-                    <span className="text-[11px] font-bold text-neutral-700 tabular-nums">
-                      Due {formatMonthDay(v.nextDueDate)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-neutral-500 italic">All routine herd vaccinations up to date.</p>
-            )}
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+          <div>
+            <h2 className="text-base font-semibold text-neutral-900">Vaccine Watchlist</h2>
+            <p className="text-[11px] text-neutral-500">
+              {scheduledVaccineCount} scheduled · {completedVaccineCount} completed
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-[11px] text-neutral-500 tabular-nums">
+              {completedVaccineCount} / {vaccines.length} records completed
+            </span>
+            <button
+              onClick={() => onNavigateTab('health')}
+              className="text-xs text-emerald-800 font-bold hover:underline cursor-pointer whitespace-nowrap"
+            >
+              Schedule &rarr;
+            </button>
           </div>
         </div>
+
+        {upcomingVaccines.length > 0 ? (
+          <div className="flex flex-col sm:flex-row gap-2">
+            {upcomingVaccines.slice(0, 3).map((v) => (
+              <div key={v.id} className="flex-1 min-w-0 text-xs p-3 bg-neutral-50 rounded-lg text-neutral-700 flex items-start justify-between gap-3 border border-neutral-200">
+                <div className="min-w-0">
+                  <p className="font-semibold text-neutral-900 truncate">{v.vaccineName}</p>
+                  <p className="text-[11px] text-neutral-500 truncate">Target: {v.cattleTag}</p>
+                </div>
+                <span className="text-[11px] font-bold text-neutral-700 tabular-nums whitespace-nowrap">
+                  Due {formatMonthDay(v.nextDueDate)}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-neutral-500 italic">All routine herd vaccinations up to date.</p>
+        )}
       </div>
 
-      {/* Two Column Section: Today's Delivery Stops & Milking Herd Pulse */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Today's Route Deliveries */}
-        <div className="bg-white rounded-xl border border-neutral-200 p-5 shadow-xs">
+      {/* Operations Grid: Delivery Route & Herd Stars */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+        {/* Delivery Route Sheet */}
+        <div className="bg-white rounded-xl border border-neutral-200 p-5 shadow-xs flex flex-col">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="text-base font-semibold text-neutral-900">Delivery Route Sheet</h2>
               <p className="text-xs text-neutral-500">Customer deliveries scheduled for {selectedDate}</p>
             </div>
+            <span className="text-[11px] font-semibold text-neutral-500 bg-neutral-50 border border-neutral-200 px-2 py-0.5 rounded">
+              {todaySupply.length} stops
+            </span>
           </div>
 
           <div className="divide-y divide-neutral-100 overflow-hidden">
@@ -905,62 +974,84 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               No delivery stops scheduled for this date.
             </div>
           )}
+
+          <div className="mt-auto pt-3 border-t border-neutral-100 flex flex-wrap items-center justify-between gap-2 text-[11px] text-neutral-500">
+            <span>
+              <strong className="text-neutral-900 tabular-nums">{deliveredTodayCount}</strong> of{' '}
+              <strong className="text-neutral-900 tabular-nums">{todaySupply.length}</strong> stops delivered
+              {todaySupply.length > 5 ? ' · Showing 5' : ''}
+            </span>
+            <span className="tabular-nums">
+              {todayRouteLiters.toFixed(1)} L ·{' '}
+              <strong className="text-neutral-800">
+                {currencySymbol}{todayRouteValue.toFixed(2)}
+              </strong>
+            </span>
+          </div>
         </div>
 
-        {/* Top Producing Cows Snapshot */}
+        {/* Herd Milking Stars */}
         <div className="bg-white rounded-xl border border-neutral-200 p-5 shadow-xs">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-start justify-between gap-3 mb-4">
             <div>
               <h2 className="text-base font-semibold text-neutral-900">Herd Milking Stars</h2>
               <p className="text-xs text-neutral-500">Top milk yield producers in lactating cycle</p>
             </div>
             <button
               onClick={() => onNavigateTab('cattle')}
-              className="text-xs font-bold text-emerald-800 hover:text-emerald-950 flex items-center gap-1 cursor-pointer"
+              className="text-xs font-bold text-emerald-800 hover:text-emerald-950 flex items-center gap-1 cursor-pointer whitespace-nowrap"
             >
-              <span>All {cattle.length} Cattle</span>
+              <span>All {cattle.length}</span>
               <ArrowUpRight className="w-3.5 h-3.5" />
             </button>
           </div>
 
           <div className="divide-y divide-neutral-100">
-            {cattle
-              .filter((c) => c.status === 'Lactating')
-              .sort((a, b) => b.avgDailyYield - a.avgDailyYield)
-              .slice(0, 5)
-              .map((cow) => {
-                const isUnderWithdrawal = cow.healthCondition === 'Withdrawal';
-                return (
-                  <div key={cow.id} className="py-2.5 flex items-center justify-between gap-3 px-2 rounded-lg hover:bg-neutral-50 transition-colors">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-neutral-100 border border-neutral-200 flex items-center justify-center text-xs font-bold text-neutral-800">
-                        {cow.tagNumber.replace('DF-', '')}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-semibold text-neutral-900">{cow.name}</span>
-                          <span className="text-[11px] text-neutral-500">· {cow.breed}</span>
-                          {isUnderWithdrawal && (
-                            <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-semibold">
-                              WITHDRAWAL
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[11px] text-neutral-500">
-                          Lactation #{cow.lactationCycle} · Weight: {cow.weightKg}kg
-                        </p>
-                      </div>
+            {topLactatingCattle.map((cow) => {
+              const isUnderWithdrawal = cow.healthCondition === 'Withdrawal';
+              return (
+                <div key={cow.id} className="py-2.5 flex items-center justify-between gap-3 px-2 rounded-lg hover:bg-neutral-50 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-neutral-100 border border-neutral-200 flex items-center justify-center text-xs font-bold text-neutral-800">
+                      {cow.tagNumber.replace('DF-', '')}
                     </div>
-
-                    <div className="text-right">
-                      <span className="text-xs font-bold text-emerald-800 tabular-nums">
-                        {cow.avgDailyYield.toFixed(1)} L/day
-                      </span>
-                      <p className="text-[10px] text-neutral-400">Avg Output</p>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-neutral-900">{cow.name}</span>
+                        <span className="text-[11px] text-neutral-500">· {cow.breed}</span>
+                        {isUnderWithdrawal && (
+                          <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-semibold">
+                            WITHDRAWAL
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-neutral-500">
+                        Lactation #{cow.lactationCycle} · Weight: {cow.weightKg}kg
+                      </p>
                     </div>
                   </div>
-                );
-              })}
+
+                  <div className="text-right">
+                    <span className="text-xs font-bold text-emerald-800 tabular-nums">
+                      {cow.avgDailyYield.toFixed(1)} L/day
+                    </span>
+                    <p className="text-[10px] text-neutral-400">Avg Output</p>
+                  </div>
+                </div>
+              );
+            })}
+            {topLactatingCattle.length === 0 && (
+              <div className="py-6 text-center text-xs text-neutral-500">
+                No lactating cows recorded yet.
+              </div>
+            )}
+          </div>
+
+          <div className="mt-3 pt-3 border-t border-neutral-100 flex items-center justify-between gap-2 text-[11px] text-neutral-500">
+            <span>Herd average</span>
+            <span className="font-semibold text-emerald-800 tabular-nums">
+              {avgLactatingYield.toFixed(1)} L/day · {totalLactatingYield.toFixed(1)} L total
+            </span>
           </div>
         </div>
       </div>
