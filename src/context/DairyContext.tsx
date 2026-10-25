@@ -28,6 +28,13 @@ import {
   saveMilkSales,
 } from '@/lib/sales/client';
 import {
+  buildCsvImportPlan,
+  toCsvImportPreview,
+  type CsvImportExisting,
+  type CsvImportPreview,
+  type CsvImportResult,
+} from '@/lib/csv-import';
+import {
   isSaleInRange,
   saleBelongsToCustomer,
   summarizeSales,
@@ -115,6 +122,8 @@ interface DairyContextType {
   // Backup & Reset
   exportDataJSON: () => void;
   importDataJSON: (jsonStr: string) => boolean;
+  previewCsvImport: (csvText: string, fileName?: string) => CsvImportPreview;
+  importCsv: (csvText: string, fileName?: string) => Promise<CsvImportResult>;
   clearFarmData: () => void;
 }
 
@@ -940,6 +949,92 @@ export const DairyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
+  const csvImportExisting = (): CsvImportExisting => ({
+    cattle,
+    milkLogs,
+    customers,
+    sales,
+    expenses,
+    vaccines,
+    invoices,
+  });
+
+  const previewCsvImport = (
+    csvText: string,
+    fileName = 'farm-data.csv'
+  ): CsvImportPreview => {
+    const plan = buildCsvImportPlan(
+      csvText,
+      csvImportExisting(),
+      fileName
+    );
+    return toCsvImportPreview(plan);
+  };
+
+  const importCsv = async (
+    csvText: string,
+    fileName = 'farm-data.csv'
+  ): Promise<CsvImportResult> => {
+    const plan = buildCsvImportPlan(
+      csvText,
+      csvImportExisting(),
+      fileName
+    );
+    const preview = toCsvImportPreview(plan);
+    const emptyResult = {
+      ...preview,
+      fileName,
+      inserted: 0,
+      skipped: plan.counts.skipped,
+    };
+
+    if (plan.errors.length > 0) return emptyResult;
+    if (plan.dairyRecords.length === 0 && !plan.hasSalesChanges) {
+      return emptyResult;
+    }
+
+    setSyncStatus('saving');
+    setDatabaseError(null);
+
+    try {
+      // Invoices reference the imported sales, so write the base records and
+      // sales first, then add the invoices.
+      const baseRecords = plan.dairyRecords.filter(
+        (record) => record.collection !== 'invoices'
+      );
+      const invoiceRecords = plan.dairyRecords.filter(
+        (record) => record.collection === 'invoices'
+      );
+
+      if (baseRecords.length > 0) {
+        await insertDairyRecords(baseRecords);
+      }
+      if (plan.hasSalesChanges && plan.salesToSave.length > 0) {
+        await saveMilkSales(plan.salesToSave);
+      }
+      if (invoiceRecords.length > 0) {
+        await insertDairyRecords(invoiceRecords);
+      }
+
+      await refreshFromDatabase();
+
+      return {
+        ...preview,
+        fileName,
+        inserted: plan.dairyRecords.length + plan.newSalesCount,
+        skipped: plan.counts.skipped,
+      };
+    } catch (error) {
+      const message = `Import stopped: ${errorMessage(
+        error,
+        'Could not import CSV data.'
+      )} Some records may already be saved; refresh before retrying.`;
+      setSyncStatus('error');
+      setDatabaseError(message);
+      throw new Error(message);
+    }
+  };
+
   const clearFarmData = () => {
     setCattle([]);
     setMilkLogs([]);
@@ -1002,6 +1097,8 @@ export const DairyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         addFeedStock,
         exportDataJSON,
         importDataJSON,
+        previewCsvImport,
+        importCsv,
         clearFarmData,
       }}
     >

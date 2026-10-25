@@ -4,6 +4,7 @@ import React from 'react';
 import { useDairy } from '../context/DairyContext';
 import { 
   Calendar, 
+  Database,
   Download, 
   RefreshCw,
   Sparkles
@@ -13,12 +14,14 @@ interface TopBarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
   onOpenQuickLogModal: () => void;
+  onOpenDataManagement: () => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
   activeTab,
   setActiveTab,
-  onOpenQuickLogModal
+  onOpenQuickLogModal,
+  onOpenDataManagement,
 }) => {
   const { 
     selectedDate, 
@@ -162,6 +165,16 @@ export const TopBar: React.FC<TopBarProps> = ({
           >
             <Sparkles className="w-3.5 h-3.5" />
             <span>+ Quick Log</span>
+          </button>
+
+          {/* Data, Import & Backup */}
+          <button
+            onClick={onOpenDataManagement}
+            title="Import CSV, back up, or reset farm data"
+            aria-label="Open data management"
+            className="p-1.5 text-neutral-600 hover:text-emerald-800 hover:bg-emerald-50 rounded-lg border border-neutral-200 transition-colors cursor-pointer"
+          >
+            <Database className="w-4 h-4" />
           </button>
 
           {/* Backup / Export */}

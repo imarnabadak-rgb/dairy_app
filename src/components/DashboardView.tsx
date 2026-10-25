@@ -4,6 +4,10 @@ import React, { useState } from 'react';
 import Image from 'next/image';
 import { useDairy } from '../context/DairyContext';
 import {
+  buildDashboardReportCsv,
+  downloadCsvFile,
+} from '../lib/dashboard-report';
+import {
   addMonthsISO,
   endOfMonthISO,
   formatDateRange,
@@ -29,7 +33,9 @@ import {
   Receipt,
   TrendingUp,
   Wallet,
-  CalendarDays
+  CalendarDays,
+  Download,
+  Upload
 } from 'lucide-react';
 
 interface DashboardViewProps {
@@ -37,6 +43,7 @@ interface DashboardViewProps {
   onOpenMilkModal: () => void;
   onOpenCattleModal: () => void;
   onOpenExpenseModal?: () => void;
+  onOpenDataManagement?: () => void;
 }
 
 type DashboardPeriod = 'this-month' | 'last-month' | '3m' | '6m' | '1y' | 'max';
@@ -98,6 +105,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onNavigateTab,
   onOpenMilkModal,
   onOpenCattleModal,
+  onOpenDataManagement,
 }) => {
   const { 
     selectedDate, 
@@ -109,6 +117,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     vaccines, 
     expenses,
     sales,
+    customers,
+    feeds,
     toggleDeliveryStatus,
     currencySymbol 
   } = useDairy();
@@ -186,6 +196,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const periodExpenses = expenses.filter((e) => isInPeriod(e.date));
   const periodTotalExpenses = periodExpenses.reduce((acc, curr) => acc + curr.amount, 0);
+  const totalFeedStockKg = feeds.reduce((acc, feed) => acc + feed.stockKg, 0);
 
   // Operating net profit for the selected period
   const netOperatingProfit = periodInvoicedRevenue - periodTotalExpenses;
@@ -283,6 +294,65 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     chartMode === 'quality'
       ? dailyTrendData.some((d) => d.fat !== null || d.snf !== null)
       : dailyTrendData.some((d) => d.total > 0);
+
+  const handleDownloadReport = () => {
+    const csv = buildDashboardReportCsv({
+      generatedAt: new Date().toISOString(),
+      periodLabel,
+      periodRangeLabel,
+      periodFrom: periodRange.from,
+      periodTo: periodRange.to,
+      operationalDate: selectedDate,
+      currencySymbol,
+      periodMilkLogs,
+      periodSales: periodMilkSales,
+      periodSupplyLogs,
+      periodInvoices,
+      periodExpenses,
+      customers,
+      cattle,
+      vaccines,
+      tanks: dashboardTanks,
+      feeds,
+      summary: {
+        totalMilk: totalMilkInPeriod,
+        avgMilkPerDay,
+        productionDays: milkProductionDays,
+        avgFat,
+        avgSnf,
+        avgClr,
+        withheldMilk: withheldMilkInPeriod,
+        usableMilk: usableMilkInPeriod,
+        milkSold: totalMilkSoldLiters,
+        salesValue: totalMilkSalesValue,
+        paidSalesValue: paidMilkSalesValue,
+        salesCount: periodMilkSales.length,
+        deliveryRevenue: periodDeliveryRevenue,
+        collected: periodCollected,
+        invoicedRevenue: periodInvoicedRevenue,
+        totalExpenses: periodTotalExpenses,
+        netProfit: netOperatingProfit,
+        profitMargin,
+        lactatingCount,
+        pregnantCount,
+        dryCount,
+        otherCount,
+        withdrawalCount,
+        customerCount: customers.length,
+        invoiceCount: periodInvoices.length,
+        expenseCount: periodExpenses.length,
+        supplyCount: periodSupplyLogs.length,
+        scheduledVaccines: scheduledVaccineCount,
+        completedVaccines: completedVaccineCount,
+        feedStockKg: totalFeedStockKg,
+      },
+    });
+
+    downloadCsvFile(
+      `dairyflow_dashboard_report_${periodRange.from}_to_${periodRange.to}.csv`,
+      csv
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -392,6 +462,28 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <option value="1y">Last 1 year</option>
             <option value="max">All time (max)</option>
           </select>
+
+          {onOpenDataManagement && (
+            <button
+              type="button"
+              onClick={onOpenDataManagement}
+              title="Import old farm data from a CSV file"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-50 transition-colors cursor-pointer shadow-xs"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              Import CSV
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={handleDownloadReport}
+            title="Download a CSV report for the selected dashboard period"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-700 text-white hover:bg-emerald-800 transition-colors cursor-pointer shadow-xs"
+          >
+            <Download className="w-3.5 h-3.5" />
+            Download Report
+          </button>
         </div>
       </div>
 

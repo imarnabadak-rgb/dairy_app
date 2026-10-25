@@ -26,6 +26,7 @@ function DairyAppContent() {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         onOpenQuickLogModal={() => setIsQuickLogOpen(true)}
+        onOpenDataManagement={() => setIsDataManagementOpen(true)}
       />
 
       {/* Main Content Area */}
@@ -35,6 +36,7 @@ function DairyAppContent() {
             onNavigateTab={setActiveTab}
             onOpenMilkModal={() => setActiveTab('production')}
             onOpenCattleModal={() => setActiveTab('cattle')}
+            onOpenDataManagement={() => setIsDataManagementOpen(true)}
           />
         )}
 
