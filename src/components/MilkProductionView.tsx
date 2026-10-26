@@ -34,6 +34,7 @@ interface MilkLogDraft {
   liters: number;
   fat: number;
   clr: number;
+  snf: number;
   milkerName: string;
   notes: string;
 }
@@ -69,7 +70,9 @@ export const MilkProductionView: React.FC = () => {
   const [liters, setLiters] = useState<number>(12.5);
   const [fatPercentage, setFatPercentage] = useState<number>(4.2);
   const [clr, setClr] = useState<number>(29.4);
-  const snfPercentage = calculateSnf(clr, fatPercentage);
+  const [snfPercentage, setSnfPercentage] = useState<number>(
+    Number(calculateSnf(29.4, 4.2).toFixed(2))
+  );
   const [milkerName, setMilkerName] = useState('Marcus Evans');
   const [logNotes, setLogNotes] = useState('');
   const [logDate, setLogDate] = useState<string>(selectedDate);
@@ -78,7 +81,6 @@ export const MilkProductionView: React.FC = () => {
   const [editDraft, setEditDraft] = useState<MilkLogDraft | null>(null);
   const editCow = cattle.find((c) => c.id === editDraft?.cowId);
   const isEditCowWithholding = editCow?.healthCondition === 'Withdrawal';
-  const editSnf = editDraft ? calculateSnf(editDraft.clr, editDraft.fat) : 0;
 
   // Selected cow data
   const currentCow = cattle.find((c) => c.id === selectedCowId);
@@ -192,7 +194,7 @@ export const MilkProductionView: React.FC = () => {
         liters: halfYield > 0 ? halfYield : 10,
         fat,
         clr,
-        snf: calculateSnf(clr, fat)
+        snf: Number(calculateSnf(clr, fat).toFixed(2))
       };
     });
     setBatchData(initialBatch);
@@ -207,13 +209,14 @@ export const MilkProductionView: React.FC = () => {
       const data = batchData[cow.id];
       if (data && data.liters > 0) {
         const isWithheld = cow.healthCondition === 'Withdrawal';
-        const snf = calculateSnf(Number(data.clr), Number(data.fat));
+        const snf = Number(Number(data.snf).toFixed(2));
+        if (!Number.isFinite(snf) || snf <= 0) return;
         addMilkLog({
           date: batchDate,
           session,
           cowId: cow.id,
           cowTag: cow.tagNumber,
-          liters: Number(data.liters),
+          liters: Number(Number(data.liters).toFixed(2)),
           fatPercentage: Number(data.fat),
           clr: Number(data.clr),
           snfPercentage: snf,
@@ -236,10 +239,13 @@ export const MilkProductionView: React.FC = () => {
     e.preventDefault();
     if (!currentCow) return;
 
+    const snf = Number(Number(snfPercentage).toFixed(2));
+    if (!Number.isFinite(snf) || snf <= 0) return;
+
     const isWithheld = isCowWithholding;
     const quality = isWithheld
       ? 'Discarded'
-      : fatPercentage >= 4.0 && snfPercentage >= 8.5
+      : fatPercentage >= 4.0 && snf >= 8.5
       ? 'Optimal'
       : 'Standard';
 
@@ -248,10 +254,10 @@ export const MilkProductionView: React.FC = () => {
       session,
       cowId: currentCow.id,
       cowTag: currentCow.tagNumber,
-      liters: Number(liters),
+      liters: Number(Number(liters).toFixed(2)),
       fatPercentage: Number(fatPercentage),
       clr: Number(clr),
-      snfPercentage: Number(snfPercentage),
+      snfPercentage: snf,
       qualityStatus: quality,
       isWithheld,
       milkerName,
@@ -261,6 +267,7 @@ export const MilkProductionView: React.FC = () => {
     focusSavedDate(logDate);
     setIsAddModalOpen(false);
     setLogNotes('');
+    setSnfPercentage(Number(calculateSnf(clr, fatPercentage).toFixed(2)));
   };
 
   const handleOpenEditModal = (log: MilkLog) => {
@@ -276,6 +283,11 @@ export const MilkProductionView: React.FC = () => {
             ).toFixed(1)
           );
 
+    const safeClr = Number.isFinite(inferredClr)
+      ? Math.min(40, Math.max(1, inferredClr))
+      : 29.4;
+    const storedSnf = Number(log.snfPercentage);
+
     setEditDraft({
       id: log.id,
       date: log.date,
@@ -283,9 +295,10 @@ export const MilkProductionView: React.FC = () => {
       cowId: log.cowId,
       liters: log.liters,
       fat: log.fatPercentage,
-      clr: Number.isFinite(inferredClr)
-        ? Math.min(40, Math.max(1, inferredClr))
-        : 29.4,
+      clr: safeClr,
+      snf: Number.isFinite(storedSnf)
+        ? Number(storedSnf.toFixed(2))
+        : Number(calculateSnf(safeClr, log.fatPercentage).toFixed(2)),
       milkerName: log.milkerName,
       notes: log.notes ?? ''
     });
@@ -298,7 +311,9 @@ export const MilkProductionView: React.FC = () => {
     const cow = cattle.find((c) => c.id === editDraft.cowId);
     if (!cow) return;
 
-    const snf = calculateSnf(editDraft.clr, editDraft.fat);
+    const snf = Number(Number(editDraft.snf).toFixed(2));
+    if (!Number.isFinite(snf) || snf <= 0) return;
+
     const isWithheld = cow.healthCondition === 'Withdrawal';
 
     updateMilkLog(editDraft.id, {
@@ -306,7 +321,7 @@ export const MilkProductionView: React.FC = () => {
       session: editDraft.session,
       cowId: cow.id,
       cowTag: cow.tagNumber,
-      liters: Number(editDraft.liters),
+      liters: Number(Number(editDraft.liters).toFixed(2)),
       fatPercentage: Number(editDraft.fat),
       clr: Number(editDraft.clr),
       snfPercentage: snf,
@@ -377,6 +392,9 @@ export const MilkProductionView: React.FC = () => {
           <button
             onClick={() => {
               setLogDate(selectedDate || todayISO());
+              setSnfPercentage(
+                Number(calculateSnf(clr, fatPercentage).toFixed(2))
+              );
               setIsAddModalOpen(true);
             }}
             className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white transition-colors shadow-xs cursor-pointer"
@@ -662,7 +680,7 @@ export const MilkProductionView: React.FC = () => {
                     </td>
 
                     <td className="py-3 px-4 text-right font-mono font-bold text-stone-900 tabular-nums">
-                      {log.liters.toFixed(1)} L
+                      {log.liters.toFixed(2)} L
                     </td>
 
                     <td className="py-3 px-4 text-right font-mono tabular-nums text-stone-600">
@@ -819,11 +837,17 @@ export const MilkProductionView: React.FC = () => {
                   <label className="block text-stone-700 font-semibold mb-1">Yield (Liters) *</label>
                   <input
                     type="number"
-                    step="0.1"
-                    min="0.1"
+                    step="0.01"
+                    min="0.01"
                     required
+                    inputMode="decimal"
+                    placeholder="00.00"
                     value={liters}
                     onChange={(e) => setLiters(Number(e.target.value))}
+                    onBlur={(e) =>
+                      setLiters(Number(Number(e.target.value).toFixed(2)))
+                    }
+                    title="Yield in litres, up to 2 decimal places"
                     className="w-full px-3 py-1.5 rounded-lg border border-stone-300 focus:outline-hidden focus:border-emerald-600"
                   />
                 </div>
@@ -837,7 +861,13 @@ export const MilkProductionView: React.FC = () => {
                       min="1"
                       max="40"
                       value={clr}
-                      onChange={(e) => setClr(Number(e.target.value))}
+                      onChange={(e) => {
+                        const nextClr = Number(e.target.value);
+                        setClr(nextClr);
+                        setSnfPercentage(
+                          Number(calculateSnf(nextClr, fatPercentage).toFixed(2))
+                        );
+                      }}
                       title="Corrected Lactometer Reading"
                       className="w-full px-2 py-1.5 rounded-lg border border-stone-300 focus:outline-hidden focus:border-emerald-600"
                     />
@@ -851,26 +881,41 @@ export const MilkProductionView: React.FC = () => {
                       min="1.0"
                       max="10.0"
                       value={fatPercentage}
-                      onChange={(e) => setFatPercentage(Number(e.target.value))}
+                      onChange={(e) => {
+                        const nextFat = Number(e.target.value);
+                        setFatPercentage(nextFat);
+                        setSnfPercentage(
+                          Number(calculateSnf(clr, nextFat).toFixed(2))
+                        );
+                      }}
                       className="w-full px-2 py-1.5 rounded-lg border border-stone-300 focus:outline-hidden focus:border-emerald-600"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-stone-700 font-semibold mb-1">SNF % (auto)</label>
+                    <label className="block text-stone-700 font-semibold mb-1">SNF %</label>
                     <input
                       type="number"
                       step="0.01"
+                      min="0.01"
+                      inputMode="decimal"
                       value={snfPercentage}
-                      readOnly
-                      tabIndex={-1}
-                      title="Calculated from CLR and butterfat"
-                      className="w-full px-2 py-1.5 rounded-lg border border-stone-200 bg-stone-50 text-stone-600 cursor-default"
+                      onChange={(e) =>
+                        setSnfPercentage(Number(e.target.value))
+                      }
+                      onBlur={(e) =>
+                        setSnfPercentage(
+                          Number(Number(e.target.value).toFixed(2))
+                        )
+                      }
+                      title="Calculated from CLR and butterfat, editable"
+                      className="w-full px-2 py-1.5 rounded-lg border border-stone-300 focus:outline-hidden focus:border-emerald-600"
                     />
                   </div>
                 </div>
                 <p className="text-[10px] text-stone-500">
                   SNF is calculated automatically: CLR ÷ 4 + 0.25 × fat + 0.44.
+                  You can override it manually.
                 </p>
 
                 <div>
@@ -1003,13 +1048,22 @@ export const MilkProductionView: React.FC = () => {
                   <label className="block text-stone-700 font-semibold mb-1">Yield (Liters) *</label>
                   <input
                     type="number"
-                    step="0.1"
-                    min="0.1"
+                    step="0.01"
+                    min="0.01"
                     required
+                    inputMode="decimal"
+                    placeholder="00.00"
                     value={editDraft.liters}
                     onChange={(e) =>
                       setEditDraft({ ...editDraft, liters: Number(e.target.value) })
                     }
+                    onBlur={(e) =>
+                      setEditDraft({
+                        ...editDraft,
+                        liters: Number(Number(e.target.value).toFixed(2)),
+                      })
+                    }
+                    title="Yield in litres, up to 2 decimal places"
                     className="w-full px-3 py-1.5 rounded-lg border border-stone-300 focus:outline-hidden focus:border-emerald-600"
                   />
                 </div>
@@ -1023,9 +1077,16 @@ export const MilkProductionView: React.FC = () => {
                       min="1"
                       max="40"
                       value={editDraft.clr}
-                      onChange={(e) =>
-                        setEditDraft({ ...editDraft, clr: Number(e.target.value) })
-                      }
+                      onChange={(e) => {
+                        const nextClr = Number(e.target.value);
+                        setEditDraft({
+                          ...editDraft,
+                          clr: nextClr,
+                          snf: Number(
+                            calculateSnf(nextClr, editDraft.fat).toFixed(2)
+                          ),
+                        });
+                      }}
                       title="Corrected Lactometer Reading"
                       className="w-full px-2 py-1.5 rounded-lg border border-stone-300 focus:outline-hidden focus:border-emerald-600"
                     />
@@ -1039,28 +1100,48 @@ export const MilkProductionView: React.FC = () => {
                       min="1.0"
                       max="10.0"
                       value={editDraft.fat}
-                      onChange={(e) =>
-                        setEditDraft({ ...editDraft, fat: Number(e.target.value) })
-                      }
+                      onChange={(e) => {
+                        const nextFat = Number(e.target.value);
+                        setEditDraft({
+                          ...editDraft,
+                          fat: nextFat,
+                          snf: Number(
+                            calculateSnf(editDraft.clr, nextFat).toFixed(2)
+                          ),
+                        });
+                      }}
                       className="w-full px-2 py-1.5 rounded-lg border border-stone-300 focus:outline-hidden focus:border-emerald-600"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-stone-700 font-semibold mb-1">SNF % (auto)</label>
+                    <label className="block text-stone-700 font-semibold mb-1">SNF %</label>
                     <input
                       type="number"
                       step="0.01"
-                      value={editSnf}
-                      readOnly
-                      tabIndex={-1}
-                      title="Calculated from CLR and butterfat"
-                      className="w-full px-2 py-1.5 rounded-lg border border-stone-200 bg-stone-50 text-stone-600 cursor-default"
+                      min="0.01"
+                      inputMode="decimal"
+                      value={editDraft.snf}
+                      onChange={(e) =>
+                        setEditDraft({
+                          ...editDraft,
+                          snf: Number(e.target.value),
+                        })
+                      }
+                      onBlur={(e) =>
+                        setEditDraft({
+                          ...editDraft,
+                          snf: Number(Number(e.target.value).toFixed(2)),
+                        })
+                      }
+                      title="Calculated from CLR and butterfat, editable"
+                      className="w-full px-2 py-1.5 rounded-lg border border-stone-300 focus:outline-hidden focus:border-emerald-600"
                     />
                   </div>
                 </div>
                 <p className="text-[10px] text-stone-500">
                   SNF is calculated automatically: CLR ÷ 4 + 0.25 × fat + 0.44.
+                  You can override it manually.
                 </p>
 
                 <div>
@@ -1180,7 +1261,7 @@ export const MilkProductionView: React.FC = () => {
                           liters: 0,
                           fat: 4.1,
                           clr: 29.4,
-                          snf: calculateSnf(29.4, 4.1)
+                          snf: Number(calculateSnf(29.4, 4.1).toFixed(2))
                         };
 
                         return (
@@ -1200,8 +1281,10 @@ export const MilkProductionView: React.FC = () => {
                             <td className="p-2.5">
                               <input
                                 type="number"
-                                step="0.1"
+                                step="0.01"
                                 min="0"
+                                inputMode="decimal"
+                                placeholder="00.00"
                                 value={current.liters}
                                 onChange={(e) =>
                                   setBatchData({
@@ -1209,6 +1292,16 @@ export const MilkProductionView: React.FC = () => {
                                     [cow.id]: { ...current, liters: Number(e.target.value) }
                                   })
                                 }
+                                onBlur={(e) =>
+                                  setBatchData({
+                                    ...batchData,
+                                    [cow.id]: {
+                                      ...current,
+                                      liters: Number(Number(e.target.value).toFixed(2)),
+                                    },
+                                  })
+                                }
+                                title="Yield in litres, up to 2 decimal places"
                                 className="w-full px-2 py-1 border border-stone-300 rounded font-mono text-xs"
                               />
                             </td>
@@ -1226,7 +1319,11 @@ export const MilkProductionView: React.FC = () => {
                                     [cow.id]: {
                                       ...current,
                                       clr,
-                                      snf: calculateSnf(clr, current.fat)
+                                      snf: Number(
+                                        calculateSnf(clr, current.fat).toFixed(
+                                          2
+                                        )
+                                      )
                                     }
                                   });
                                 }}
@@ -1248,7 +1345,11 @@ export const MilkProductionView: React.FC = () => {
                                     [cow.id]: {
                                       ...current,
                                       fat,
-                                      snf: calculateSnf(current.clr, fat)
+                                      snf: Number(
+                                        calculateSnf(current.clr, fat).toFixed(
+                                          2
+                                        )
+                                      )
                                     }
                                   });
                                 }}
@@ -1259,11 +1360,32 @@ export const MilkProductionView: React.FC = () => {
                               <input
                                 type="number"
                                 step="0.01"
+                                min="0.01"
+                                required
+                                inputMode="decimal"
                                 value={current.snf}
-                                readOnly
-                                tabIndex={-1}
-                                title="Calculated from CLR and butterfat"
-                                className="w-full px-2 py-1 border border-stone-200 rounded font-mono text-xs bg-stone-50 text-stone-600 cursor-default"
+                                onChange={(e) =>
+                                  setBatchData({
+                                    ...batchData,
+                                    [cow.id]: {
+                                      ...current,
+                                      snf: Number(e.target.value),
+                                    },
+                                  })
+                                }
+                                onBlur={(e) =>
+                                  setBatchData({
+                                    ...batchData,
+                                    [cow.id]: {
+                                      ...current,
+                                      snf: Number(
+                                        Number(e.target.value).toFixed(2)
+                                      ),
+                                    },
+                                  })
+                                }
+                                title="Calculated from CLR and butterfat, editable"
+                                className="w-full px-2 py-1 border border-stone-300 rounded font-mono text-xs"
                               />
                             </td>
                           </tr>
@@ -1275,6 +1397,7 @@ export const MilkProductionView: React.FC = () => {
 
                 <p className="text-[10px] text-stone-500">
                   SNF is calculated automatically from CLR and fat: CLR ÷ 4 + 0.25 × fat + 0.44.
+                  You can override it manually.
                 </p>
               </div>
 

@@ -10,7 +10,13 @@ import {
   summarizeSales,
   type SalesSummary,
 } from '../lib/sales/ledger';
-import { addDays, endOfMonthISO, startOfMonthISO, todayISO } from '../lib/date';
+import {
+  addDays,
+  endOfMonthISO,
+  parseISODate,
+  startOfMonthISO,
+  todayISO,
+} from '../lib/date';
 import { 
   Users, 
   IndianRupee, 
@@ -28,6 +34,47 @@ interface CustomerLedgerRow {
   customer: Customer;
   invoice: Invoice | null;
   ledger: SalesSummary;
+}
+
+interface ReceiptDailyRow {
+  date: string;
+  clr: number | null;
+  fat: number | null;
+  snf: number | null;
+  liters: number;
+  amount: number;
+  ratePerLiter: number;
+}
+
+const RECEIPT_MONTHS = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+function formatReceiptDate(value: string): string {
+  const date = parseISODate(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return `${String(date.getUTCDate()).padStart(2, '0')} ${
+    RECEIPT_MONTHS[date.getUTCMonth()]
+  } ${date.getUTCFullYear()}`;
+}
+
+function formatReceiptClr(value: number | null): string {
+  return value != null ? value.toFixed(1) : '—';
+}
+
+function formatReceiptPercent(value: number | null): string {
+  return value != null ? `${value.toFixed(2)}%` : '—';
 }
 
 export const CustomerRevenueView: React.FC = () => {
@@ -171,6 +218,126 @@ export const CustomerRevenueView: React.FC = () => {
       };
     });
   }, [customers, invoices, sales]);
+
+  // The receipt shows the actual sales behind the invoice grouped by date.
+  // This keeps the printed breakdown aligned with the live Sales tab data.
+  const selectedInvoicePrintSales = useMemo(() => {
+    if (!selectedInvoiceToPrint) return [];
+    const customer = customers.find(
+      (entry) => entry.id === selectedInvoiceToPrint.customerId
+    );
+    return getInvoiceSales(selectedInvoiceToPrint, customer, sales);
+  }, [customers, sales, selectedInvoiceToPrint]);
+
+  const selectedInvoicePrintDaily = useMemo<ReceiptDailyRow[]>(() => {
+    const byDate = new Map<
+      string,
+      {
+        date: string;
+        liters: number;
+        amount: number;
+        clrWeighted: number;
+        clrLiters: number;
+        fatWeighted: number;
+        fatLiters: number;
+        snfWeighted: number;
+        snfLiters: number;
+      }
+    >();
+
+    for (const sale of selectedInvoicePrintSales) {
+      const liters = Number(sale.quantityLiters) || 0;
+      const savedTotal = Number(sale.totalAmount);
+      const rate = Number(sale.ratePerLiter) || 0;
+      const amount = Number.isFinite(savedTotal) ? savedTotal : liters * rate;
+      const day = byDate.get(sale.date) ?? {
+        date: sale.date,
+        liters: 0,
+        amount: 0,
+        clrWeighted: 0,
+        clrLiters: 0,
+        fatWeighted: 0,
+        fatLiters: 0,
+        snfWeighted: 0,
+        snfLiters: 0,
+      };
+
+      day.liters += liters;
+      day.amount += amount;
+
+      if (liters > 0) {
+        const clr = sale.clr != null ? Number(sale.clr) : NaN;
+        if (Number.isFinite(clr)) {
+          day.clrWeighted += clr * liters;
+          day.clrLiters += liters;
+        }
+
+        const fat = sale.fatPercentage != null ? Number(sale.fatPercentage) : NaN;
+        if (Number.isFinite(fat)) {
+          day.fatWeighted += fat * liters;
+          day.fatLiters += liters;
+        }
+
+        const snf = sale.snfPercentage != null ? Number(sale.snfPercentage) : NaN;
+        if (Number.isFinite(snf)) {
+          day.snfWeighted += snf * liters;
+          day.snfLiters += liters;
+        }
+      }
+
+      byDate.set(sale.date, day);
+    }
+
+    return Array.from(byDate.values())
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .map((day) => ({
+        date: day.date,
+        clr: day.clrLiters > 0 ? day.clrWeighted / day.clrLiters : null,
+        fat: day.fatLiters > 0 ? day.fatWeighted / day.fatLiters : null,
+        snf: day.snfLiters > 0 ? day.snfWeighted / day.snfLiters : null,
+        liters: day.liters,
+        amount: day.amount,
+        ratePerLiter: day.liters > 0 ? day.amount / day.liters : 0,
+      }));
+  }, [selectedInvoicePrintSales]);
+
+  const selectedInvoicePrintQualityTotals = useMemo(() => {
+    let clrWeighted = 0;
+    let clrLiters = 0;
+    let fatWeighted = 0;
+    let fatLiters = 0;
+    let snfWeighted = 0;
+    let snfLiters = 0;
+
+    for (const sale of selectedInvoicePrintSales) {
+      const liters = Number(sale.quantityLiters) || 0;
+      if (liters <= 0) continue;
+
+      const clr = sale.clr != null ? Number(sale.clr) : NaN;
+      if (Number.isFinite(clr)) {
+        clrWeighted += clr * liters;
+        clrLiters += liters;
+      }
+
+      const fat = sale.fatPercentage != null ? Number(sale.fatPercentage) : NaN;
+      if (Number.isFinite(fat)) {
+        fatWeighted += fat * liters;
+        fatLiters += liters;
+      }
+
+      const snf = sale.snfPercentage != null ? Number(sale.snfPercentage) : NaN;
+      if (Number.isFinite(snf)) {
+        snfWeighted += snf * liters;
+        snfLiters += liters;
+      }
+    }
+
+    return {
+      clr: clrLiters > 0 ? clrWeighted / clrLiters : null,
+      fat: fatLiters > 0 ? fatWeighted / fatLiters : null,
+      snf: snfLiters > 0 ? snfWeighted / snfLiters : null,
+    };
+  }, [selectedInvoicePrintSales]);
 
   // One unified log row per customer invoice, plus a row for customers who do
   // not have an invoice yet. Customer ledger values repeat across their
@@ -762,7 +929,7 @@ export const CustomerRevenueView: React.FC = () => {
       {/* Invoice Printable Voucher Preview Modal */}
       {selectedInvoiceToPrint && (
         <div className="fixed inset-0 z-50 bg-emerald-950/25 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-stone-300 overflow-hidden">
+          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-stone-300 overflow-hidden">
             <div className="p-4 border-b border-stone-200 bg-stone-50 flex items-center justify-between">
               <span className="text-xs font-bold text-stone-700">Official Milk Invoice Receipt</span>
               <div className="flex items-center gap-2">
@@ -783,7 +950,7 @@ export const CustomerRevenueView: React.FC = () => {
             </div>
 
             {/* Printable Voucher Paper */}
-            <div className="p-8 space-y-6 text-xs text-stone-800 bg-white font-sans">
+            <div className="p-8 space-y-6 text-xs text-stone-800 bg-white font-sans overflow-y-auto flex-1 min-h-0">
               <div className="flex justify-between items-start border-b border-stone-200 pb-4">
                 <div>
                   <h2 className="text-lg font-bold text-emerald-950">VERDANT MEADOW DAIRY FARM</h2>
@@ -809,34 +976,117 @@ export const CustomerRevenueView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Itemized Table */}
-              <table className="w-full text-left border-t border-b border-stone-200 my-4">
-                <thead>
-                  <tr className="text-stone-500 font-semibold border-b border-stone-200">
-                    <th className="py-2">Description</th>
-                    <th className="py-2 text-right">Volume</th>
-                    <th className="py-2 text-right">Avg Rate</th>
-                    <th className="py-2 text-right">Amount</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-stone-100">
-                  <tr>
-                    <td className="py-2 font-medium">
-                      Farm Fresh Chilled Milk Sales
-                      {selectedInvoiceToPrint.saleIds &&
-                        selectedInvoiceToPrint.saleIds.length > 0 && (
-                          <span className="block text-[10px] font-normal text-stone-400">
-                            {selectedInvoiceToPrint.saleIds.length} recorded sale
-                            {selectedInvoiceToPrint.saleIds.length === 1 ? '' : 's'}
-                          </span>
-                        )}
-                    </td>
-                    <td className="py-2 text-right font-mono">{selectedInvoiceToPrint.totalLiters} L</td>
-                    <td className="py-2 text-right font-mono">{currencySymbol}{selectedInvoiceToPrint.ratePerLiter.toFixed(2)}</td>
-                    <td className="py-2 text-right font-mono font-bold">{currencySymbol}{selectedInvoiceToPrint.totalAmount.toFixed(2)}</td>
-                  </tr>
-                </tbody>
-              </table>
+              {/* Date-wise milk sales details */}
+              <div className="space-y-2 my-4">
+                <div>
+                  <h3 className="text-[11px] uppercase font-semibold text-stone-400">
+                    Milk Sales Details
+                  </h3>
+                  <p className="text-[10px] text-stone-500">
+                    {selectedInvoicePrintDaily.length > 0
+                      ? `${selectedInvoicePrintDaily.length} day${
+                          selectedInvoicePrintDaily.length === 1 ? '' : 's'
+                        } · ${selectedInvoicePrintSales.length} recorded sale${
+                          selectedInvoicePrintSales.length === 1 ? '' : 's'
+                        }`
+                      : 'Billing period summary'}
+                  </p>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-t border-b border-stone-200">
+                    <thead>
+                      <tr className="text-stone-500 font-semibold border-b border-stone-200">
+                        <th className="py-2">Date</th>
+                        <th className="py-2 text-right">CLR</th>
+                        <th className="py-2 text-right">Fat %</th>
+                        <th className="py-2 text-right">SNF %</th>
+                        <th className="py-2 text-right">Volume</th>
+                        <th className="py-2 text-right">Avg Rate</th>
+                        <th className="py-2 text-right">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-stone-100">
+                      {selectedInvoicePrintDaily.length > 0 ? (
+                        selectedInvoicePrintDaily.map((day) => (
+                          <tr key={day.date}>
+                            <td className="py-1.5 font-medium whitespace-nowrap">
+                              {formatReceiptDate(day.date)}
+                            </td>
+                            <td className="py-1.5 text-right font-mono whitespace-nowrap">
+                              {formatReceiptClr(day.clr)}
+                            </td>
+                            <td className="py-1.5 text-right font-mono whitespace-nowrap">
+                              {formatReceiptPercent(day.fat)}
+                            </td>
+                            <td className="py-1.5 text-right font-mono whitespace-nowrap">
+                              {formatReceiptPercent(day.snf)}
+                            </td>
+                            <td className="py-1.5 text-right font-mono whitespace-nowrap">
+                              {day.liters.toFixed(2)} L
+                            </td>
+                            <td className="py-1.5 text-right font-mono whitespace-nowrap">
+                              {currencySymbol}
+                              {day.ratePerLiter.toFixed(2)}/L
+                            </td>
+                            <td className="py-1.5 text-right font-mono whitespace-nowrap">
+                              {currencySymbol}
+                              {day.amount.toFixed(2)}
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td className="py-2 font-medium">
+                            Recorded sales summary
+                          </td>
+                          <td className="py-2 text-right font-mono">—</td>
+                          <td className="py-2 text-right font-mono">—</td>
+                          <td className="py-2 text-right font-mono">—</td>
+                          <td className="py-2 text-right font-mono">
+                            {selectedInvoiceToPrint.totalLiters.toFixed(2)} L
+                          </td>
+                          <td className="py-2 text-right font-mono">
+                            {currencySymbol}
+                            {selectedInvoiceToPrint.ratePerLiter.toFixed(2)}/L
+                          </td>
+                          <td className="py-2 text-right font-mono font-bold">
+                            {currencySymbol}
+                            {selectedInvoiceToPrint.totalAmount.toFixed(2)}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                    {selectedInvoicePrintDaily.length > 0 && (
+                      <tfoot>
+                        <tr className="border-t border-stone-300 text-stone-900">
+                          <td className="py-2 font-bold">Total</td>
+                          <td className="py-2 text-right font-mono font-bold whitespace-nowrap">
+                            {formatReceiptClr(selectedInvoicePrintQualityTotals.clr)}
+                          </td>
+                          <td className="py-2 text-right font-mono font-bold whitespace-nowrap">
+                            {formatReceiptPercent(selectedInvoicePrintQualityTotals.fat)}
+                          </td>
+                          <td className="py-2 text-right font-mono font-bold whitespace-nowrap">
+                            {formatReceiptPercent(selectedInvoicePrintQualityTotals.snf)}
+                          </td>
+                          <td className="py-2 text-right font-mono font-bold whitespace-nowrap">
+                            {selectedInvoiceToPrint.totalLiters.toFixed(2)} L
+                          </td>
+                          <td className="py-2 text-right font-mono font-bold whitespace-nowrap">
+                            {currencySymbol}
+                            {selectedInvoiceToPrint.ratePerLiter.toFixed(2)}/L
+                          </td>
+                          <td className="py-2 text-right font-mono font-bold whitespace-nowrap">
+                            {currencySymbol}
+                            {selectedInvoiceToPrint.totalAmount.toFixed(2)}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    )}
+                  </table>
+                </div>
+              </div>
 
               {/* Totals */}
               <div className="flex justify-end">

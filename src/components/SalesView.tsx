@@ -48,6 +48,7 @@ interface SaleFormData {
   quantityLiters: number;
   clr: number;
   fatPercentage: number;
+  snfPercentage: number;
   baseRate: number;
   rateMode: RateMode;
   manualRateInput: string;
@@ -63,6 +64,7 @@ const emptyForm = (date: string): SaleFormData => ({
   quantityLiters: 100,
   clr: 29.4,
   fatPercentage: 4.2,
+  snfPercentage: Number(calculateSnf(29.4, 4.2).toFixed(2)),
   baseRate: DEFAULT_MILK_BASE_RATE,
   rateMode: 'quality',
   manualRateInput: '',
@@ -199,7 +201,7 @@ export const SalesView: React.FC = () => {
       const qualityRate = calculateMilkPricing(
         Number(current.baseRate),
         Number(current.fatPercentage),
-        calculateSnf(Number(current.clr), Number(current.fatPercentage))
+        Number(current.snfPercentage)
       ).ratePerLiter;
 
       return {
@@ -248,9 +250,10 @@ export const SalesView: React.FC = () => {
         : DEFAULT_MILK_BASE_RATE
     );
     const savedSnf =
-      sale.snfPercentage != null
-        ? Number(sale.snfPercentage)
-        : calculateSnf(clr, fatPercentage);
+      sale.snfPercentage != null &&
+      Number.isFinite(Number(sale.snfPercentage))
+        ? Number(Number(sale.snfPercentage).toFixed(2))
+        : Number(calculateSnf(clr, fatPercentage).toFixed(2));
     const qualityRate = calculateMilkPricing(
       baseRate,
       fatPercentage,
@@ -271,6 +274,7 @@ export const SalesView: React.FC = () => {
       quantityLiters: Number(sale.quantityLiters),
       clr,
       fatPercentage,
+      snfPercentage: savedSnf,
       baseRate,
       rateMode: isManualRate ? 'manual' : 'quality',
       manualRateInput: (isManualRate ? savedRate : qualityRate).toFixed(2),
@@ -283,9 +287,15 @@ export const SalesView: React.FC = () => {
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     const manualRate = Number(formData.manualRateInput);
+    const quantityLiters = Number(Number(formData.quantityLiters).toFixed(2));
+    const snfPercentage = Number(
+      Number(formData.snfPercentage).toFixed(2)
+    );
     if (
       !formData.buyerName.trim() ||
-      formData.quantityLiters <= 0 ||
+      quantityLiters <= 0 ||
+      !Number.isFinite(snfPercentage) ||
+      snfPercentage <= 0 ||
       formData.baseRate <= 0 ||
       (formData.rateMode === 'manual' &&
         (!Number.isFinite(manualRate) || manualRate <= 0))
@@ -293,11 +303,9 @@ export const SalesView: React.FC = () => {
       return;
     }
 
-    const quantityLiters = Number(formData.quantityLiters);
     const baseRate = Number(formData.baseRate);
     const clr = Number(formData.clr);
     const fatPercentage = Number(formData.fatPercentage);
-    const snfPercentage = calculateSnf(clr, fatPercentage);
     const qualityRate = calculateMilkPricing(
       baseRate,
       fatPercentage,
@@ -336,10 +344,7 @@ export const SalesView: React.FC = () => {
     setEditingSaleId(null);
   };
 
-  const formSnf = calculateSnf(
-    Number(formData.clr),
-    Number(formData.fatPercentage)
-  );
+  const formSnf = Number(formData.snfPercentage);
   const formPricing = calculateMilkPricing(
     Number(formData.baseRate),
     Number(formData.fatPercentage),
@@ -350,8 +355,11 @@ export const SalesView: React.FC = () => {
     formData.rateMode === 'manual' && Number.isFinite(formManualRate)
       ? Number(formManualRate.toFixed(2))
       : formPricing.ratePerLiter;
+  const formQuantityLiters = Number(
+    Number(formData.quantityLiters).toFixed(2)
+  );
   const formTotal = Number(
-    (Number(formData.quantityLiters) * formRatePerLiter).toFixed(2)
+    (formQuantityLiters * formRatePerLiter).toFixed(2)
   );
 
   return (
@@ -388,7 +396,7 @@ export const SalesView: React.FC = () => {
           </div>
           <div className="flex items-baseline gap-1 mt-1">
             <span className="text-2xl font-bold text-neutral-900 tabular-nums">
-              {totalLiters.toFixed(1)}
+              {totalLiters.toFixed(2)}
             </span>
             <span className="text-xs text-neutral-500">L</span>
           </div>
@@ -573,7 +581,7 @@ export const SalesView: React.FC = () => {
                   </td>
 
                   <td className="py-3 px-4 text-right font-mono font-bold text-neutral-900 tabular-nums">
-                    {Number(sale.quantityLiters).toFixed(1)}
+                    {Number(sale.quantityLiters).toFixed(2)}
                   </td>
 
                   <td className="py-3 px-4 text-right font-mono tabular-nums text-neutral-600">
@@ -752,13 +760,22 @@ export const SalesView: React.FC = () => {
                     <label className="block text-neutral-700 font-semibold mb-1">Quantity (L) *</label>
                     <input
                       type="number"
-                      step="0.1"
-                      min="0.1"
+                      step="0.01"
+                      min="0.01"
                       required
+                      inputMode="decimal"
+                      placeholder="00.00"
                       value={formData.quantityLiters}
                       onChange={(e) =>
                         setFormData({ ...formData, quantityLiters: Number(e.target.value) })
                       }
+                      onBlur={(e) =>
+                        setFormData({
+                          ...formData,
+                          quantityLiters: Number(Number(e.target.value).toFixed(2)),
+                        })
+                      }
+                      title="Quantity in litres, up to 2 decimal places"
                       className="w-full px-2 py-2 rounded-lg border border-neutral-300 font-mono focus:outline-hidden focus:border-emerald-600"
                     />
                   </div>
@@ -771,9 +788,19 @@ export const SalesView: React.FC = () => {
                       min="1"
                       max="40"
                       value={formData.clr}
-                      onChange={(e) =>
-                        setFormData({ ...formData, clr: Number(e.target.value) })
-                      }
+                      onChange={(e) => {
+                        const nextClr = Number(e.target.value);
+                        setFormData({
+                          ...formData,
+                          clr: nextClr,
+                          snfPercentage: Number(
+                            calculateSnf(
+                              nextClr,
+                              formData.fatPercentage
+                            ).toFixed(2)
+                          ),
+                        });
+                      }}
                       className="w-full px-2 py-2 rounded-lg border border-neutral-300 font-mono focus:outline-hidden focus:border-emerald-600"
                     />
                   </div>
@@ -786,26 +813,52 @@ export const SalesView: React.FC = () => {
                       min="0"
                       max="10"
                       value={formData.fatPercentage}
-                      onChange={(e) =>
-                        setFormData({ ...formData, fatPercentage: Number(e.target.value) })
-                      }
+                      onChange={(e) => {
+                        const nextFat = Number(e.target.value);
+                        setFormData({
+                          ...formData,
+                          fatPercentage: nextFat,
+                          snfPercentage: Number(
+                            calculateSnf(formData.clr, nextFat).toFixed(2)
+                          ),
+                        });
+                      }}
                       className="w-full px-2 py-2 rounded-lg border border-neutral-300 font-mono focus:outline-hidden focus:border-emerald-600"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-neutral-700 font-semibold mb-1">SNF % (auto)</label>
+                    <label className="block text-neutral-700 font-semibold mb-1">SNF %</label>
                     <input
-                      type="text"
-                      readOnly
-                      value={formSnf.toFixed(2)}
-                      className="w-full px-2 py-2 rounded-lg border border-neutral-200 bg-neutral-50 font-mono font-bold text-emerald-900 cursor-default"
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      inputMode="decimal"
+                      placeholder="00.00"
+                      value={formData.snfPercentage}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          snfPercentage: Number(e.target.value),
+                        })
+                      }
+                      onBlur={(e) =>
+                        setFormData({
+                          ...formData,
+                          snfPercentage: Number(
+                            Number(e.target.value).toFixed(2)
+                          ),
+                        })
+                      }
+                      title="Calculated from CLR and butterfat, editable"
+                      className="w-full px-2 py-2 rounded-lg border border-neutral-300 font-mono focus:outline-hidden focus:border-emerald-600"
                     />
                   </div>
                 </div>
 
                 <p className="text-[10px] text-neutral-400">
-                  SNF is calculated automatically from CLR and butterfat.
+                  SNF is calculated automatically from CLR and butterfat. You
+                  can override it manually.
                 </p>
 
                 <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
@@ -938,7 +991,7 @@ export const SalesView: React.FC = () => {
                       </span>
                     </div>
                     <p className="border-t border-amber-200 pt-1.5 text-[10px] font-mono text-amber-900">
-                      {Number(formData.quantityLiters).toFixed(1)} L ×{' '}
+                      {formQuantityLiters.toFixed(2)} L ×{' '}
                       {formRatePerLiter.toFixed(2)} ={' '}
                       {formTotal.toFixed(2)}
                     </p>

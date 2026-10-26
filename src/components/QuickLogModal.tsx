@@ -22,7 +22,9 @@ export const QuickLogModal: React.FC<QuickLogModalProps> = ({ isOpen, onClose })
   const [liters, setLiters] = useState<number>(14.0);
   const [fat, setFat] = useState<number>(4.2);
   const [clr, setClr] = useState<number>(29.4);
-  const snf = calculateSnf(clr, fat);
+  const [snf, setSnf] = useState<number>(
+    Number(calculateSnf(29.4, 4.2).toFixed(2))
+  );
 
   // Delivery quick form
   const [selectedCustId, setSelectedCustId] = useState(customers[0]?.id || '');
@@ -37,18 +39,21 @@ export const QuickLogModal: React.FC<QuickLogModalProps> = ({ isOpen, onClose })
     e.preventDefault();
     if (!currentCow) return;
 
+    const snfPercentage = Number(Number(snf).toFixed(2));
+    if (!Number.isFinite(snfPercentage) || snfPercentage <= 0) return;
+
     addMilkLog({
       date: selectedDate,
       session,
       cowId: currentCow.id,
       cowTag: currentCow.tagNumber,
-      liters: Number(liters),
+      liters: Number(Number(liters).toFixed(2)),
       fatPercentage: Number(fat),
       clr: Number(clr),
-      snfPercentage: Number(snf),
+      snfPercentage,
       qualityStatus: isWithheld
         ? 'Discarded'
-        : fat >= 4.0 && snf >= 8.5
+        : fat >= 4.0 && snfPercentage >= 8.5
         ? 'Optimal'
         : 'Standard',
       isWithheld: isWithheld,
@@ -161,11 +166,17 @@ export const QuickLogModal: React.FC<QuickLogModalProps> = ({ isOpen, onClose })
                 <label className="block text-stone-700 font-semibold mb-1">Yield (Liters) *</label>
                 <input
                   type="number"
-                  step="0.1"
-                  min="0.5"
+                  step="0.01"
+                  min="0.01"
                   required
+                  inputMode="decimal"
+                  placeholder="00.00"
                   value={liters}
                   onChange={(e) => setLiters(Number(e.target.value))}
+                  onBlur={(e) =>
+                    setLiters(Number(Number(e.target.value).toFixed(2)))
+                  }
+                  title="Yield in litres, up to 2 decimal places"
                   className="w-full px-3 py-1.5 rounded-lg border border-stone-300 font-mono"
                 />
               </div>
@@ -180,7 +191,13 @@ export const QuickLogModal: React.FC<QuickLogModalProps> = ({ isOpen, onClose })
                   min="1"
                   max="40"
                   value={clr}
-                  onChange={(e) => setClr(Number(e.target.value))}
+                  onChange={(e) => {
+                    const nextClr = Number(e.target.value);
+                    setClr(nextClr);
+                    setSnf(
+                      Number(calculateSnf(nextClr, fat).toFixed(2))
+                    );
+                  }}
                   title="Corrected Lactometer Reading"
                   className="w-full px-2 py-1.5 rounded-lg border border-stone-300 font-mono"
                 />
@@ -193,25 +210,36 @@ export const QuickLogModal: React.FC<QuickLogModalProps> = ({ isOpen, onClose })
                   min="1.0"
                   max="10.0"
                   value={fat}
-                  onChange={(e) => setFat(Number(e.target.value))}
+                  onChange={(e) => {
+                    const nextFat = Number(e.target.value);
+                    setFat(nextFat);
+                    setSnf(
+                      Number(calculateSnf(clr, nextFat).toFixed(2))
+                    );
+                  }}
                   className="w-full px-2 py-1.5 rounded-lg border border-stone-300 font-mono"
                 />
               </div>
               <div>
-                <label className="block text-stone-700 font-semibold mb-1">SNF % (auto)</label>
+                <label className="block text-stone-700 font-semibold mb-1">SNF %</label>
                 <input
                   type="number"
                   step="0.01"
+                  min="0.01"
+                  inputMode="decimal"
                   value={snf}
-                  readOnly
-                  tabIndex={-1}
-                  title="Calculated from CLR and butterfat"
-                  className="w-full px-2 py-1.5 rounded-lg border border-stone-200 bg-stone-50 text-stone-600 font-mono cursor-default"
+                  onChange={(e) => setSnf(Number(e.target.value))}
+                  onBlur={(e) =>
+                    setSnf(Number(Number(e.target.value).toFixed(2)))
+                  }
+                  title="Calculated from CLR and butterfat, editable"
+                  className="w-full px-2 py-1.5 rounded-lg border border-stone-300 font-mono"
                 />
               </div>
             </div>
             <p className="text-[10px] text-stone-500">
               SNF is calculated automatically: CLR ÷ 4 + 0.25 × fat + 0.44.
+              You can override it manually.
             </p>
 
             <div className="pt-2 flex justify-end gap-2">
