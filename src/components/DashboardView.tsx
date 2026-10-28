@@ -6,7 +6,9 @@ import { useDairy } from '../context/DairyContext';
 import {
   buildDashboardReportCsv,
   downloadCsvFile,
+  type DashboardReportInput,
 } from '../lib/dashboard-report';
+import { downloadDashboardReportPdf } from '../lib/dashboard-report-pdf';
 import {
   addMonthsISO,
   endOfMonthISO,
@@ -35,7 +37,8 @@ import {
   Wallet,
   CalendarDays,
   Download,
-  Upload
+  Upload,
+  FileText
 } from 'lucide-react';
 
 interface DashboardViewProps {
@@ -46,7 +49,14 @@ interface DashboardViewProps {
   onOpenDataManagement?: () => void;
 }
 
-type DashboardPeriod = 'this-month' | 'last-month' | '3m' | '6m' | '1y' | 'max';
+type DashboardPeriod =
+  | 'this-month'
+  | 'last-month'
+  | '3m'
+  | '6m'
+  | '1y'
+  | 'max'
+  | 'custom';
 
 const PERIOD_LABELS: Record<DashboardPeriod, string> = {
   'this-month': 'This month',
@@ -55,6 +65,7 @@ const PERIOD_LABELS: Record<DashboardPeriod, string> = {
   '6m': 'Last 6 months',
   '1y': 'Last 1 year',
   max: 'All time',
+  custom: 'Custom range',
 };
 
 function getDashboardPeriodRange(
@@ -125,6 +136,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const [period, setPeriod] = useState<DashboardPeriod>('this-month');
   const [chartMode, setChartMode] = useState<'yield' | 'quality'>('quality');
+  const [customRange, setCustomRange] = useState<{ from: string; to: string }>(
+    () => {
+      const anchor = selectedDate || todayISO();
+      return { from: startOfMonthISO(anchor), to: anchor };
+    }
+  );
 
   const periodAnchor = selectedDate || todayISO();
   // The dashboard no longer surfaces the two legacy demo silos. Other tanks
@@ -135,10 +152,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const availableDates = [
     ...milkLogs.map((m) => m.date),
     ...supplyLogs.map((s) => s.date),
+    ...sales.map((s) => s.date),
     ...expenses.map((e) => e.date),
     ...invoices.map((inv) => inv.issueDate),
   ].filter(Boolean);
-  const periodRange = getDashboardPeriodRange(period, periodAnchor, availableDates);
+  const periodRange =
+    period === 'custom'
+      ? (() => {
+          const fallbackFrom = startOfMonthISO(periodAnchor);
+          const from = customRange.from || fallbackFrom;
+          const to = customRange.to || periodAnchor;
+          return from <= to ? { from, to } : { from: to, to: from };
+        })()
+      : getDashboardPeriodRange(period, periodAnchor, availableDates);
   const periodLabel = PERIOD_LABELS[period];
   const periodRangeLabel = formatDateRange(periodRange.from, periodRange.to);
   const isLongRange =
@@ -295,62 +321,74 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       ? dailyTrendData.some((d) => d.fat !== null || d.snf !== null)
       : dailyTrendData.some((d) => d.total > 0);
 
-  const handleDownloadReport = () => {
-    const csv = buildDashboardReportCsv({
-      generatedAt: new Date().toISOString(),
-      periodLabel,
-      periodRangeLabel,
-      periodFrom: periodRange.from,
-      periodTo: periodRange.to,
-      operationalDate: selectedDate,
-      currencySymbol,
-      periodMilkLogs,
-      periodSales: periodMilkSales,
-      periodSupplyLogs,
-      periodInvoices,
-      periodExpenses,
-      customers,
-      cattle,
-      vaccines,
-      tanks: dashboardTanks,
-      feeds,
-      summary: {
-        totalMilk: totalMilkInPeriod,
-        avgMilkPerDay,
-        productionDays: milkProductionDays,
-        avgFat,
-        avgSnf,
-        avgClr,
-        withheldMilk: withheldMilkInPeriod,
-        usableMilk: usableMilkInPeriod,
-        milkSold: totalMilkSoldLiters,
-        salesValue: totalMilkSalesValue,
-        paidSalesValue: paidMilkSalesValue,
-        salesCount: periodMilkSales.length,
-        deliveryRevenue: periodDeliveryRevenue,
-        collected: periodCollected,
-        invoicedRevenue: periodInvoicedRevenue,
-        totalExpenses: periodTotalExpenses,
-        netProfit: netOperatingProfit,
-        profitMargin,
-        lactatingCount,
-        pregnantCount,
-        dryCount,
-        otherCount,
-        withdrawalCount,
-        customerCount: customers.length,
-        invoiceCount: periodInvoices.length,
-        expenseCount: periodExpenses.length,
-        supplyCount: periodSupplyLogs.length,
-        scheduledVaccines: scheduledVaccineCount,
-        completedVaccines: completedVaccineCount,
-        feedStockKg: totalFeedStockKg,
-      },
-    });
+  const buildReportInput = (): DashboardReportInput => ({
+    generatedAt: new Date().toISOString(),
+    periodLabel,
+    periodRangeLabel,
+    periodFrom: periodRange.from,
+    periodTo: periodRange.to,
+    operationalDate: selectedDate,
+    currencySymbol,
+    periodMilkLogs,
+    periodSales: periodMilkSales,
+    periodSupplyLogs,
+    periodInvoices,
+    periodExpenses,
+    customers,
+    cattle,
+    vaccines,
+    tanks: dashboardTanks,
+    feeds,
+    summary: {
+      totalMilk: totalMilkInPeriod,
+      avgMilkPerDay,
+      productionDays: milkProductionDays,
+      avgFat,
+      avgSnf,
+      avgClr,
+      withheldMilk: withheldMilkInPeriod,
+      usableMilk: usableMilkInPeriod,
+      milkSold: totalMilkSoldLiters,
+      salesValue: totalMilkSalesValue,
+      paidSalesValue: paidMilkSalesValue,
+      salesCount: periodMilkSales.length,
+      deliveryRevenue: periodDeliveryRevenue,
+      collected: periodCollected,
+      invoicedRevenue: periodInvoicedRevenue,
+      totalExpenses: periodTotalExpenses,
+      netProfit: netOperatingProfit,
+      profitMargin,
+      lactatingCount,
+      pregnantCount,
+      dryCount,
+      otherCount,
+      withdrawalCount,
+      customerCount: customers.length,
+      invoiceCount: periodInvoices.length,
+      expenseCount: periodExpenses.length,
+      supplyCount: periodSupplyLogs.length,
+      scheduledVaccines: scheduledVaccineCount,
+      completedVaccines: completedVaccineCount,
+      feedStockKg: totalFeedStockKg,
+    },
+  });
 
+  const handleDownloadReport = async () => {
+    try {
+      await downloadDashboardReportPdf(
+        buildReportInput(),
+        `dairyflow_farm_report_${periodRange.from}_to_${periodRange.to}.pdf`
+      );
+    } catch (error) {
+      console.error('Could not generate the PDF report', error);
+      window.alert('Could not generate the PDF report. Please try again.');
+    }
+  };
+
+  const handleDownloadCsv = () => {
     downloadCsvFile(
       `dairyflow_dashboard_report_${periodRange.from}_to_${periodRange.to}.csv`,
-      csv
+      buildDashboardReportCsv(buildReportInput())
     );
   };
 
@@ -444,7 +482,79 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             >
               Last month
             </button>
+            <button
+              type="button"
+              onClick={() => setPeriod('custom')}
+              aria-pressed={period === 'custom'}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
+                period === 'custom'
+                  ? 'bg-emerald-700 text-white shadow-xs'
+                  : 'text-neutral-600 hover:text-neutral-900 hover:bg-white'
+              }`}
+            >
+              Custom
+            </button>
           </div>
+
+          {period === 'custom' && (
+            <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50/50 p-1">
+              <span className="px-1 text-[10px] font-bold uppercase tracking-wider text-emerald-800">
+                From
+              </span>
+              <input
+                type="date"
+                value={customRange.from}
+                max={customRange.to || undefined}
+                onChange={(e) => {
+                  const from = e.target.value;
+                  if (!from) return;
+                  setCustomRange((current) => ({
+                    from,
+                    to: current.to && from <= current.to ? current.to : from,
+                  }));
+                  setPeriod('custom');
+                }}
+                aria-label="Report from date"
+                className="px-2 py-1.5 text-xs rounded-md border border-neutral-200 bg-white text-neutral-700 focus:outline-hidden focus:border-emerald-600"
+              />
+              <span className="text-[10px] font-semibold text-emerald-700">
+                to
+              </span>
+              <input
+                type="date"
+                value={customRange.to}
+                min={customRange.from || undefined}
+                onChange={(e) => {
+                  const to = e.target.value;
+                  if (!to) return;
+                  setCustomRange((current) => ({
+                    from: current.from && to >= current.from ? current.from : to,
+                    to,
+                  }));
+                  setPeriod('custom');
+                }}
+                aria-label="Report to date"
+                className="px-2 py-1.5 text-xs rounded-md border border-neutral-200 bg-white text-neutral-700 focus:outline-hidden focus:border-emerald-600"
+              />
+              <span className="px-1 text-[10px] font-bold uppercase tracking-wider text-emerald-800">
+                Month
+              </span>
+              <input
+                type="month"
+                value={customRange.from ? customRange.from.slice(0, 7) : ''}
+                onChange={(e) => {
+                  const month = e.target.value;
+                  if (!month) return;
+                  const from = `${month}-01`;
+                  setCustomRange({ from, to: endOfMonthISO(from) });
+                  setPeriod('custom');
+                }}
+                aria-label="Report month"
+                title="Select a whole month"
+                className="px-2 py-1.5 text-xs rounded-md border border-neutral-200 bg-white text-neutral-700 focus:outline-hidden focus:border-emerald-600"
+              />
+            </div>
+          )}
 
           <select
             value={isLongRange ? period : ''}
@@ -477,12 +587,22 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
           <button
             type="button"
+            onClick={handleDownloadCsv}
+            title="Download the full raw data as a CSV file"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50 transition-colors cursor-pointer shadow-xs"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            CSV
+          </button>
+
+          <button
+            type="button"
             onClick={handleDownloadReport}
-            title="Download a CSV report for the selected dashboard period"
+            title="Download a simple PDF farm report for the selected period"
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-700 text-white hover:bg-emerald-800 transition-colors cursor-pointer shadow-xs"
           >
             <Download className="w-3.5 h-3.5" />
-            Download Report
+            Download PDF
           </button>
         </div>
       </div>
