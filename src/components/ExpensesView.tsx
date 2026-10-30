@@ -1,14 +1,19 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useDairy } from '../context/DairyContext';
 import { FarmExpense, ExpenseCategory } from '../types/dairy';
+import {
+  addMonthsISO,
+  endOfMonthISO,
+  formatDateRange,
+  startOfMonthISO,
+  todayISO,
+} from '../lib/date';
 import { 
-  Receipt, 
   Plus, 
   Trash2, 
   Search, 
-  Filter, 
   IndianRupee, 
   Wheat, 
   Syringe, 
@@ -20,12 +25,25 @@ import {
   Pencil,
   X,
   CreditCard,
-  Calendar
+  Calendar,
+  CalendarDays
 } from 'lucide-react';
+
+type ExpensePeriod = 'this-month' | 'last-month' | '3m' | '6m' | '1y' | 'max';
+
+const PERIOD_LABELS: Record<ExpensePeriod, string> = {
+  'this-month': 'This month',
+  'last-month': 'Last month',
+  '3m': 'Last 3 months',
+  '6m': 'Last 6 months',
+  '1y': 'Last 1 year',
+  max: 'All time',
+};
 
 export const ExpensesView: React.FC = () => {
   const { 
     expenses, 
+    cattle,
     addExpense, 
     updateExpense,
     deleteExpense, 
@@ -38,6 +56,7 @@ export const ExpensesView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
+  const [period, setPeriod] = useState<ExpensePeriod>('this-month');
 
   // Form state
   const [formData, setFormData] = useState<{
@@ -49,6 +68,7 @@ export const ExpensesView: React.FC = () => {
     paymentMethod: FarmExpense['paymentMethod'];
     receiptNumber: string;
     notes: string;
+    cattleId: string;
   }>({
     title: '',
     category: 'Feed & Fodder',
@@ -57,7 +77,8 @@ export const ExpensesView: React.FC = () => {
     vendor: '',
     paymentMethod: 'Bank Transfer',
     receiptNumber: '',
-    notes: ''
+    notes: '',
+    cattleId: ''
   });
 
   // Category icons & styling helper
@@ -80,11 +101,61 @@ export const ExpensesView: React.FC = () => {
     }
   };
 
-  // Metrics
-  const totalAllTimeExpenses = expenses.reduce((acc, e) => acc + e.amount, 0);
-  const todayExpenses = expenses
-    .filter((e) => e.date === selectedDate)
-    .reduce((acc, e) => acc + e.amount, 0);
+  // Metrics — all figures follow the selected expense period.
+  const periodAnchor = selectedDate || todayISO();
+  const periodRange = useMemo(() => {
+    if (period === 'max') {
+      const dates = expenses.map((expense) => expense.date).filter(Boolean).sort();
+      const earliest = dates[0];
+      const latest = dates[dates.length - 1];
+      return {
+        from: earliest ?? startOfMonthISO(periodAnchor),
+        to: latest && latest > periodAnchor ? latest : periodAnchor,
+      };
+    }
+
+    if (period === 'this-month') {
+      return {
+        from: startOfMonthISO(periodAnchor),
+        to: periodAnchor,
+      };
+    }
+
+    if (period === 'last-month') {
+      const lastMonth = addMonthsISO(periodAnchor, -1);
+      return {
+        from: startOfMonthISO(lastMonth),
+        to: endOfMonthISO(lastMonth),
+      };
+    }
+
+    const monthsBack = period === '3m' ? 2 : period === '6m' ? 5 : 11;
+    return {
+      from: startOfMonthISO(addMonthsISO(periodAnchor, -monthsBack)),
+      to: periodAnchor,
+    };
+  }, [expenses, period, periodAnchor]);
+
+  const periodExpenses = expenses.filter(
+    (expense) => expense.date >= periodRange.from && expense.date <= periodRange.to
+  );
+  const totalPeriodExpenses = periodExpenses.reduce(
+    (acc, expense) => acc + expense.amount,
+    0
+  );
+  const periodDays = Math.max(
+    1,
+    Math.round(
+      (Date.parse(`${periodRange.to}T00:00:00Z`) -
+        Date.parse(`${periodRange.from}T00:00:00Z`)) /
+        86400000
+    ) + 1
+  );
+  const averageDailyExpense = totalPeriodExpenses / periodDays;
+  const periodLabel = PERIOD_LABELS[period];
+  const periodRangeLabel = formatDateRange(periodRange.from, periodRange.to);
+  const isLongRange =
+    period === '3m' || period === '6m' || period === '1y' || period === 'max';
 
   // Category totals
   const categoriesList: ExpenseCategory[] = [
@@ -97,14 +168,23 @@ export const ExpensesView: React.FC = () => {
     'Farm Misc & Supplies'
   ];
 
+  const cattleOptions = [...cattle].sort((a, b) =>
+    a.tagNumber.localeCompare(b.tagNumber)
+  );
+
   const categoryTotals = categoriesList.map((cat) => {
-    const sum = expenses.filter((e) => e.category === cat).reduce((acc, e) => acc + e.amount, 0);
-    const pct = totalAllTimeExpenses > 0 ? Math.round((sum / totalAllTimeExpenses) * 100) : 0;
+    const sum = periodExpenses
+      .filter((e) => e.category === cat)
+      .reduce((acc, e) => acc + e.amount, 0);
+    const pct =
+      totalPeriodExpenses > 0
+        ? Math.round((sum / totalPeriodExpenses) * 100)
+        : 0;
     return { category: cat, total: sum, percentage: pct };
   }).sort((a, b) => b.total - a.total);
 
   // Filtered list
-  const filteredExpenses = expenses.filter((e) => {
+  const filteredExpenses = periodExpenses.filter((e) => {
     const matchesCategory = categoryFilter === 'all' || e.category === categoryFilter;
     const matchesSearch =
       e.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -128,13 +208,23 @@ export const ExpensesView: React.FC = () => {
       vendor: '',
       paymentMethod: 'Bank Transfer',
       receiptNumber: `REC-${Date.now().toString().slice(-4)}`,
-      notes: ''
+      notes: '',
+      cattleId: ''
     });
     setIsAddModalOpen(true);
   };
 
   const handleOpenEdit = (expense: FarmExpense) => {
     setEditingExpenseId(expense.id);
+    const linkedCattle =
+      expense.cattleId && expense.cattleId !== 'combined'
+        ? expense.cattleId
+        : expense.cattleTag && expense.cattleTag !== 'Combined'
+          ? cattle.find((cow) => cow.tagNumber === expense.cattleTag)?.id ?? ''
+          : expense.cattleTag === 'Combined' || expense.cattleId === 'combined'
+            ? 'combined'
+            : '';
+
     setFormData({
       title: expense.title,
       category: expense.category,
@@ -143,7 +233,8 @@ export const ExpensesView: React.FC = () => {
       vendor: expense.vendor,
       paymentMethod: expense.paymentMethod,
       receiptNumber: expense.receiptNumber ?? '',
-      notes: expense.notes ?? ''
+      notes: expense.notes ?? '',
+      cattleId: linkedCattle
     });
     setIsAddModalOpen(true);
   };
@@ -151,6 +242,18 @@ export const ExpensesView: React.FC = () => {
   const handleSaveExpense = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.title.trim() || formData.amount <= 0) return;
+
+    const selectedCattle = cattle.find((cow) => cow.id === formData.cattleId);
+    const cattleId =
+      formData.category === 'Veterinary & Vaccines' && formData.cattleId
+        ? formData.cattleId
+        : undefined;
+    const cattleTag =
+      cattleId === 'combined'
+        ? 'Combined'
+        : cattleId
+          ? selectedCattle?.tagNumber
+          : undefined;
 
     const expensePayload: Omit<FarmExpense, 'id'> = {
       title: formData.title.trim(),
@@ -160,7 +263,9 @@ export const ExpensesView: React.FC = () => {
       vendor: formData.vendor.trim() || 'General Farm Supplier',
       paymentMethod: formData.paymentMethod,
       receiptNumber: formData.receiptNumber.trim() || undefined,
-      notes: formData.notes.trim() || undefined
+      notes: formData.notes.trim() || undefined,
+      cattleId,
+      cattleTag
     };
 
     if (editingExpenseId) {
@@ -197,37 +302,98 @@ export const ExpensesView: React.FC = () => {
         </button>
       </div>
 
+      {/* Expense Period Filter */}
+      <div className="bg-white rounded-xl border border-neutral-200 shadow-xs p-3 flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-700">
+            <CalendarDays className="w-4 h-4" />
+          </div>
+          <div>
+            <p className="text-xs font-bold text-neutral-900">Expense period</p>
+            <p className="text-[11px] text-neutral-500">
+              {periodLabel} · {periodRangeLabel}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+          <div className="inline-flex rounded-lg border border-neutral-200 bg-neutral-50 p-0.5">
+            <button
+              type="button"
+              onClick={() => setPeriod('this-month')}
+              aria-pressed={period === 'this-month'}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
+                period === 'this-month'
+                  ? 'bg-emerald-700 text-white shadow-xs'
+                  : 'text-neutral-600 hover:text-neutral-900 hover:bg-white'
+              }`}
+            >
+              This month
+            </button>
+            <button
+              type="button"
+              onClick={() => setPeriod('last-month')}
+              aria-pressed={period === 'last-month'}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
+                period === 'last-month'
+                  ? 'bg-emerald-700 text-white shadow-xs'
+                  : 'text-neutral-600 hover:text-neutral-900 hover:bg-white'
+              }`}
+            >
+              Last month
+            </button>
+          </div>
+
+          <select
+            value={isLongRange ? period : ''}
+            onChange={(e) => {
+              if (e.target.value) {
+                setPeriod(e.target.value as ExpensePeriod);
+              }
+            }}
+            aria-label="Longer expense period"
+            className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-neutral-200 bg-white text-neutral-700 focus:outline-hidden focus:border-emerald-600 cursor-pointer"
+          >
+            <option value="">More periods</option>
+            <option value="3m">Last 3 months</option>
+            <option value="6m">Last 6 months</option>
+            <option value="1y">Last 1 year</option>
+            <option value="max">All time</option>
+          </select>
+        </div>
+      </div>
+
       {/* Aggregate Expense Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white p-4 rounded-xl border border-neutral-200 shadow-xs">
           <div className="flex items-center justify-between text-neutral-500 text-xs font-medium mb-1">
-            <span>Total Logged Expenses</span>
+            <span>Total Expenses</span>
             <IndianRupee className="w-4 h-4 text-emerald-700" />
           </div>
           <div className="flex items-baseline gap-1 mt-1">
             <span className="text-neutral-400 text-base">{currencySymbol}</span>
             <span className="text-2xl font-bold text-neutral-900 tabular-nums">
-              {totalAllTimeExpenses.toFixed(2)}
+              {totalPeriodExpenses.toFixed(2)}
             </span>
           </div>
           <span className="text-[11px] text-neutral-400 mt-1 block">
-            Across {expenses.length} expense vouchers
+            {periodExpenses.length} voucher{periodExpenses.length === 1 ? '' : 's'} · {periodLabel}
           </span>
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-neutral-200 shadow-xs">
           <div className="flex items-center justify-between text-neutral-500 text-xs font-medium mb-1">
-            <span>Expenses on {selectedDate}</span>
+            <span>Average Daily Spend</span>
             <Calendar className="w-4 h-4 text-emerald-700" />
           </div>
           <div className="flex items-baseline gap-1 mt-1">
             <span className="text-neutral-400 text-base">{currencySymbol}</span>
             <span className="text-2xl font-bold text-neutral-900 tabular-nums">
-              {todayExpenses.toFixed(2)}
+              {averageDailyExpense.toFixed(2)}
             </span>
           </div>
           <span className="text-[11px] text-neutral-400 mt-1 block">
-            Today's outlays
+            Across {periodDays} day{periodDays === 1 ? '' : 's'} in this period
           </span>
         </div>
 
@@ -267,6 +433,9 @@ export const ExpensesView: React.FC = () => {
       <div className="bg-white p-5 rounded-xl border border-neutral-200 shadow-xs">
         <h2 className="text-xs font-bold text-neutral-800 uppercase tracking-wider mb-4">
           Cost Allocation by Operational Center
+          <span className="ml-2 text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded normal-case tracking-normal">
+            {periodLabel}
+          </span>
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {categoryTotals.map((cat) => (
@@ -359,6 +528,14 @@ export const ExpensesView: React.FC = () => {
                       {getCategoryIcon(exp.category)}
                       <span>{exp.category}</span>
                     </span>
+                    {exp.category === 'Veterinary & Vaccines' && exp.cattleTag && (
+                      <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
+                        <PawPrint className="w-2.5 h-2.5" />
+                        {exp.cattleTag === 'Combined'
+                          ? 'Combined herd'
+                          : `${exp.cattleTag} Cattle`}
+                      </span>
+                    )}
                   </td>
 
                   <td className="py-3 px-4 text-neutral-800 font-medium">
@@ -410,8 +587,12 @@ export const ExpensesView: React.FC = () => {
 
         {filteredExpenses.length === 0 && (
           <div className="py-12 text-center text-neutral-500">
-            <p className="text-sm font-semibold">No expense records match this filter</p>
-            <p className="text-xs text-neutral-400 mt-1">Click "+ Log Farm Expense" to record feed, veterinary, or farm costs.</p>
+            <p className="text-sm font-semibold">
+              No expense records match this filter
+            </p>
+            <p className="text-xs text-neutral-400 mt-1">
+              No vouchers found for {periodLabel.toLowerCase()} ({periodRangeLabel}). Change the period or log a new expense.
+            </p>
           </div>
         )}
       </div>
@@ -454,7 +635,17 @@ export const ExpensesView: React.FC = () => {
                     <label className="block text-neutral-700 font-semibold mb-1">Expense Category *</label>
                     <select
                       value={formData.category}
-                      onChange={(e) => setFormData({ ...formData, category: e.target.value as ExpenseCategory })}
+                      onChange={(e) => {
+                        const nextCategory = e.target.value as ExpenseCategory;
+                        setFormData({
+                          ...formData,
+                          category: nextCategory,
+                          cattleId:
+                            nextCategory === 'Veterinary & Vaccines'
+                              ? formData.cattleId
+                              : ''
+                        });
+                      }}
                       className="w-full px-3 py-2 rounded-lg border border-neutral-300 bg-white"
                     >
                       {categoriesList.map((c) => (
@@ -475,6 +666,35 @@ export const ExpensesView: React.FC = () => {
                       className="w-full px-3 py-2 rounded-lg border border-neutral-300 font-mono text-sm font-bold focus:outline-hidden focus:border-emerald-600"
                     />
                   </div>
+
+                  {formData.category === 'Veterinary & Vaccines' && (
+                    <div className="sm:col-span-2 rounded-lg border border-emerald-200 bg-emerald-50/50 p-3">
+                      <label className="flex items-center gap-1.5 text-neutral-700 font-semibold mb-1">
+                        <PawPrint className="w-3.5 h-3.5 text-emerald-700" />
+                        <span>Cattle / Animal</span>
+                      </label>
+                      <select
+                        value={formData.cattleId}
+                        onChange={(e) =>
+                          setFormData({ ...formData, cattleId: e.target.value })
+                        }
+                        className="w-full px-3 py-2 rounded-lg border border-emerald-200 bg-white text-neutral-800 focus:outline-hidden focus:border-emerald-600 cursor-pointer"
+                      >
+                        <option value="">Select cattle (optional)</option>
+                        <option value="combined">Combined (all cattle)</option>
+                        {cattleOptions.map((cow) => (
+                          <option key={cow.id} value={cow.id}>
+                            {cow.tagNumber} Cattle
+                            {cow.name ? ` · ${cow.name}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-[10px] text-neutral-500 mt-1">
+                        Choose the treated cow, or “Combined” for herd-wide veterinary care.
+                        Only cattle added to your herd appear here.
+                      </p>
+                    </div>
+                  )}
 
                   <div>
                     <label className="block text-neutral-700 font-semibold mb-1">Expense Date</label>

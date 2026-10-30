@@ -254,9 +254,9 @@ export async function downloadDashboardReportPdf(
       hint: `INR ${amount(summary.salesValue)} sales`,
     },
     {
-      label: 'REVENUE INVOICED',
-      value: `INR ${amount(summary.invoicedRevenue)}`,
-      hint: `INR ${amount(summary.collected)} collected`,
+      label: 'REVENUE COLLECTED',
+      value: `INR ${amount(summary.revenueCollected)}`,
+      hint: `INR ${amount(summary.invoicedRevenue)} invoiced`,
     },
     {
       label: 'NET PROFIT',
@@ -592,8 +592,8 @@ export async function downloadDashboardReportPdf(
   }> = [
     {
       label: 'REVENUE',
-      value: `INR ${amount(summary.invoicedRevenue)}`,
-      hint: `${data.paidInvoicesTotal > 0 ? `INR ${amount(data.paidInvoicesTotal)} payments received` : 'No invoice payments'}`,
+      value: `INR ${amount(summary.revenueCollected)}`,
+      hint: `INR ${amount(summary.invoicedRevenue)} invoiced`,
       tone: 'neutral',
     },
     {

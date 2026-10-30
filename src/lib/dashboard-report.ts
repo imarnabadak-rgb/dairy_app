@@ -28,6 +28,8 @@ export interface DashboardReportSummary {
   deliveryRevenue: number;
   collected: number;
   invoicedRevenue: number;
+  /** Cash received during the period, including payments of older invoices. */
+  revenueCollected: number;
   totalExpenses: number;
   netProfit: number;
   profitMargin: number;
@@ -201,7 +203,8 @@ export function buildDashboardReportCsv(input: DashboardReportInput): string {
     ['Pending sales value', number(data.pendingSalesValue)],
     ['Delivery revenue', number(input.summary.deliveryRevenue)],
     ['Collected delivery payments', number(input.summary.collected)],
-    ['Invoiced revenue', number(input.summary.invoicedRevenue)],
+    ['Revenue collected (cash received)', number(input.summary.revenueCollected)],
+    ['Invoiced revenue (billed this period)', number(input.summary.invoicedRevenue)],
     ['Total farm expenses', number(input.summary.totalExpenses)],
     ['Net operating profit', number(input.summary.netProfit)],
     ['Profit margin %', number(input.summary.profitMargin, 0)],
@@ -552,11 +555,12 @@ export function buildDashboardReportCsv(input: DashboardReportInput): string {
 
   addSection(
     'Expense Details',
-    ['Date', 'Title', 'Category', 'Amount', 'Vendor', 'Payment Method', 'Receipt Number', 'Notes'],
+    ['Date', 'Title', 'Category', 'Cattle', 'Amount', 'Vendor', 'Payment Method', 'Receipt Number', 'Notes'],
     data.sortedExpenses.map((expense) => [
       expense.date,
       expense.title,
       expense.category,
+      expense.cattleTag ?? '',
       number(expense.amount),
       expense.vendor,
       expense.paymentMethod,
@@ -595,14 +599,15 @@ export function buildDashboardReportCsv(input: DashboardReportInput): string {
   );
 
   addSection('Financial Summary', ['Metric', 'Value'], [
-    ['Revenue (invoiced)', number(input.summary.invoicedRevenue)],
+    ['Revenue collected (cash received)', number(input.summary.revenueCollected)],
+    ['Revenue invoiced (billed this period)', number(input.summary.invoicedRevenue)],
     ['Total farm expenses', number(input.summary.totalExpenses)],
-    ['Net profit', number(input.summary.netProfit)],
+    ['Net profit (collected revenue - expenses)', number(input.summary.netProfit)],
     ['Profit margin %', number(input.summary.profitMargin, 0)],
     ['Milk sales value', number(input.summary.salesValue)],
     ['Paid milk sales', number(input.summary.paidSalesValue)],
     ['Outstanding milk sales', number(data.pendingSalesValue)],
-    ['Invoice payments received', number(data.paidInvoicesTotal)],
+    ['Invoice payments recorded on this period\'s invoices', number(data.paidInvoicesTotal)],
     ['Delivery revenue', number(input.summary.deliveryRevenue)],
     ['Collected delivery payments', number(input.summary.collected)],
   ]);

@@ -9,6 +9,7 @@ import {
   type DashboardReportInput,
 } from '../lib/dashboard-report';
 import { downloadDashboardReportPdf } from '../lib/dashboard-report-pdf';
+import { getInvoiceSales } from '../lib/sales/ledger';
 import {
   addMonthsISO,
   endOfMonthISO,
@@ -207,6 +208,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const paidMilkSalesValue = periodMilkSales
     .filter((s) => s.paymentStatus === 'Paid')
     .reduce((acc, s) => acc + s.totalAmount, 0);
+  const pendingMilkSalesValue = Math.max(
+    0,
+    Number((totalMilkSalesValue - paidMilkSalesValue).toFixed(2))
+  );
 
   // Period deliveries and route progress
   const periodSupplyLogs = supplyLogs.filter((s) => isInPeriod(s.date));
@@ -220,14 +225,75 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const periodInvoices = invoices.filter((inv) => isInPeriod(inv.issueDate));
   const periodInvoicedRevenue = periodInvoices.reduce((acc, curr) => acc + curr.totalAmount, 0);
 
+  // Cash-basis revenue: money actually received in the selected period.
+  // Invoices recorded before this period still count when their payment was
+  // collected now. Legacy invoices without dated payments fall back to the
+  // invoice issue date.
+  const invoicePaymentEvents = invoices.flatMap((invoice) => {
+    const recordedPayments = invoice.payments ?? [];
+    if (recordedPayments.length > 0) {
+      return recordedPayments.map((payment) => ({
+        date: payment.date,
+        amount: Number(payment.amount) || 0,
+        invoice,
+      }));
+    }
+    const paidAmount = Number(invoice.paidAmount) || 0;
+    if (paidAmount > 0) {
+      return [{ date: invoice.issueDate, amount: paidAmount, invoice }];
+    }
+    // An invoice may still be marked unpaid while one of its source sales was
+    // settled directly. Fall back to those sale dates so the cash is not lost.
+    const customer = customers.find((entry) => entry.id === invoice.customerId);
+    return getInvoiceSales(invoice, customer, sales)
+      .filter((sale) => sale.paymentStatus === 'Paid')
+      .map((sale) => ({
+        date: sale.date,
+        amount: Number(sale.totalAmount) || 0,
+        invoice,
+      }));
+  });
+  const periodInvoiceCollections = invoicePaymentEvents
+    .filter((payment) => isInPeriod(payment.date))
+    .reduce((acc, payment) => acc + payment.amount, 0);
+  const periodPriorInvoiceCollections = invoicePaymentEvents
+    .filter(
+      (payment) =>
+        isInPeriod(payment.date) && payment.invoice.issueDate < periodRange.from
+    )
+    .reduce((acc, payment) => acc + payment.amount, 0);
+
+  // Paid milk sales that never became part of an invoice are direct cash
+  // revenue. Sales already covered by an invoice are counted through the
+  // invoice payments above, so they are excluded here to avoid double counting.
+  const invoicedSaleIds = new Set<string>();
+  for (const invoice of invoices) {
+    if (invoice.saleIds && invoice.saleIds.length > 0) {
+      invoice.saleIds.forEach((saleId) => invoicedSaleIds.add(saleId));
+    } else {
+      const customer = customers.find((entry) => entry.id === invoice.customerId);
+      for (const sale of getInvoiceSales(invoice, customer, sales)) {
+        invoicedSaleIds.add(sale.id);
+      }
+    }
+  }
+  const directPaidSalesValue = periodMilkSales
+    .filter(
+      (sale) =>
+        sale.paymentStatus === 'Paid' && !invoicedSaleIds.has(sale.id)
+    )
+    .reduce((acc, sale) => acc + Number(sale.totalAmount), 0);
+  const periodRevenueCollected =
+    periodInvoiceCollections + directPaidSalesValue;
+
   const periodExpenses = expenses.filter((e) => isInPeriod(e.date));
   const periodTotalExpenses = periodExpenses.reduce((acc, curr) => acc + curr.amount, 0);
   const totalFeedStockKg = feeds.reduce((acc, feed) => acc + feed.stockKg, 0);
 
-  // Operating net profit for the selected period
-  const netOperatingProfit = periodInvoicedRevenue - periodTotalExpenses;
-  const profitMargin = periodInvoicedRevenue > 0
-    ? Math.round((netOperatingProfit / periodInvoicedRevenue) * 100)
+  // Operating net profit on cash received during the selected period.
+  const netOperatingProfit = periodRevenueCollected - periodTotalExpenses;
+  const profitMargin = periodRevenueCollected > 0
+    ? Math.round((netOperatingProfit / periodRevenueCollected) * 100)
     : 0;
 
   // The route sheet stays anchored to the operational date in the top bar.
@@ -355,6 +421,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       deliveryRevenue: periodDeliveryRevenue,
       collected: periodCollected,
       invoicedRevenue: periodInvoicedRevenue,
+      revenueCollected: periodRevenueCollected,
       totalExpenses: periodTotalExpenses,
       netProfit: netOperatingProfit,
       profitMargin,
@@ -637,17 +704,34 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           {/* Revenue */}
           <div className="p-4 rounded-xl bg-emerald-50/50 border border-emerald-200">
             <div className="flex items-center justify-between text-xs text-emerald-800 font-semibold mb-1">
-              <span>Total Revenue Invoiced</span>
+              <span>Total Revenue Collected</span>
               <IndianRupee className="w-4 h-4 text-emerald-700" />
             </div>
             <div className="flex items-baseline gap-1 mt-1">
               <span className="text-emerald-700 text-sm font-bold">{currencySymbol}</span>
               <span className="text-2xl font-extrabold text-neutral-900 tabular-nums">
-                {periodInvoicedRevenue.toFixed(2)}
+                {periodRevenueCollected.toFixed(2)}
               </span>
             </div>
-            <div className="text-[11px] text-neutral-600 mt-2 flex justify-between">
-              <span>Period deliveries: <strong className="text-neutral-900 tabular-nums">{currencySymbol}{periodDeliveryRevenue.toFixed(2)}</strong></span>
+            <div className="text-[11px] text-neutral-600 mt-2 flex justify-between gap-2">
+              <span>
+                Invoiced: <strong className="text-neutral-900 tabular-nums">{currencySymbol}{periodInvoicedRevenue.toFixed(2)}</strong>
+              </span>
+              <span title="Payments received this period for invoices issued before this period">
+                Prior dues: <strong className="text-emerald-800 tabular-nums">{currencySymbol}{periodPriorInvoiceCollections.toFixed(2)}</strong>
+              </span>
+            </div>
+            <div className="mt-2 flex items-center justify-between gap-2 rounded-md border border-amber-200 bg-amber-50/70 px-2 py-1 text-[11px]">
+              <span className="inline-flex items-center gap-1 font-semibold text-amber-800">
+                <Clock className="w-3 h-3" />
+                Outstanding Payment Due
+              </span>
+              <strong className="font-mono tabular-nums text-amber-900">
+                {currencySymbol}{pendingMilkSalesValue.toFixed(2)}
+              </strong>
+            </div>
+            <div className="text-[10px] text-neutral-500 mt-1">
+              Cash received in {periodLabel.toLowerCase()}, including old invoice payments
             </div>
           </div>
 

@@ -111,6 +111,13 @@ export interface DailySupplyLog {
   notes?: string;
 }
 
+export interface InvoicePayment {
+  id: string;
+  /** Date the payment was received (YYYY-MM-DD). */
+  date: string;
+  amount: number;
+}
+
 export interface Invoice {
   id: string;
   customerId: string;
@@ -130,6 +137,8 @@ export interface Invoice {
   status: 'Paid' | 'Pending' | 'Partially Paid' | 'Overdue';
   issueDate: string;
   dueDate: string;
+  /** Dated payment receipts; used for period-wise revenue. */
+  payments?: InvoicePayment[];
 }
 
 export type VaccineStatus = 'Completed' | 'Scheduled' | 'Overdue';
@@ -192,4 +201,8 @@ export interface FarmExpense {
   paymentMethod: 'Cash' | 'Bank Transfer' | 'Card / UPI';
   receiptNumber?: string;
   notes?: string;
+  /** Cattle linked to a veterinary expense. `combined` means the whole herd. */
+  cattleId?: string;
+  /** Display tag for the linked cattle, e.g. "CW0001" or "Combined". */
+  cattleTag?: string;
 }

@@ -95,6 +95,7 @@ export const CustomerRevenueView: React.FC = () => {
   const [isAddCustomerOpen, setIsAddCustomerOpen] = useState(false);
   const [selectedInvoiceForPayment, setSelectedInvoiceForPayment] = useState<Invoice | null>(null);
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
+  const [paymentDate, setPaymentDate] = useState<string>(todayISO());
   const [selectedInvoiceToPrint, setSelectedInvoiceToPrint] = useState<Invoice | null>(null);
   const [isGenerateInvoiceOpen, setIsGenerateInvoiceOpen] = useState(false);
   const [selectedCustForInvoice, setSelectedCustForInvoice] = useState(customers[0]?.id || '');
@@ -464,9 +465,10 @@ export const CustomerRevenueView: React.FC = () => {
     e.preventDefault();
     if (!selectedInvoiceForPayment || paymentAmount <= 0) return;
 
-    recordInvoicePayment(selectedInvoiceForPayment.id, paymentAmount);
+    recordInvoicePayment(selectedInvoiceForPayment.id, paymentAmount, paymentDate);
     setSelectedInvoiceForPayment(null);
     setPaymentAmount(0);
+    setPaymentDate(todayISO());
   };
 
   const handleGenerateInvoiceSubmit = (e: React.FormEvent) => {
@@ -815,6 +817,7 @@ export const CustomerRevenueView: React.FC = () => {
                             onClick={() => {
                               setSelectedInvoiceForPayment(invoice);
                               setPaymentAmount(balanceRemaining);
+                              setPaymentDate(todayISO());
                             }}
                             className="px-2 py-1 text-[11px] font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded transition-colors cursor-pointer shadow-xs"
                           >
@@ -903,6 +906,20 @@ export const CustomerRevenueView: React.FC = () => {
                     onChange={(e) => setPaymentAmount(Number(e.target.value))}
                     className="w-full px-3 py-2 rounded-lg border border-stone-300 font-mono text-sm font-bold focus:outline-hidden focus:border-emerald-600"
                   />
+                </div>
+
+                <div>
+                  <label className="block text-stone-700 font-semibold mb-1">Payment Received On *</label>
+                  <input
+                    type="date"
+                    required
+                    value={paymentDate}
+                    onChange={(e) => setPaymentDate(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-stone-300 font-mono text-sm focus:outline-hidden focus:border-emerald-600"
+                  />
+                  <p className="text-[10px] text-stone-500 mt-1">
+                    Cash is counted in the dashboard period that contains this date.
+                  </p>
                 </div>
               </div>
 

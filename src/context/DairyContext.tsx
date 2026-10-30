@@ -47,6 +47,7 @@ import {
   Customer,
   DailySupplyLog,
   Invoice,
+  InvoicePayment,
   VaccineRecord,
   StorageTank,
   FeedInventory,
@@ -103,7 +104,7 @@ interface DairyContextType {
   markAllDeliveriesDelivered: () => void;
 
   // Invoices & Billing
-  recordInvoicePayment: (invoiceId: string, amount: number) => void;
+  recordInvoicePayment: (invoiceId: string, amount: number, paymentDate?: string) => void;
   generateCustomerInvoice: (customerId: string, from: string, to: string) => boolean;
 
   // Expenses actions
@@ -709,7 +710,11 @@ export const DairyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     );
   };
 
-  const recordInvoicePayment = (invoiceId: string, amount: number) => {
+  const recordInvoicePayment = (
+    invoiceId: string,
+    amount: number,
+    paymentDateInput?: string
+  ) => {
     const invoice = invoices.find((inv) => inv.id === invoiceId);
     if (!invoice || amount <= 0) return;
 
@@ -717,12 +722,48 @@ export const DairyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       invoice.totalAmount,
       Number((invoice.paidAmount + amount).toFixed(2))
     );
+    const applied = Number((newPaid - invoice.paidAmount).toFixed(2));
+    if (applied <= 0) return;
+
+    const paymentDate =
+      paymentDateInput && /^\d{4}-\d{2}-\d{2}$/.test(paymentDateInput)
+        ? paymentDateInput
+        : todayISO();
     const newStatus: Invoice['status'] =
       newPaid >= invoice.totalAmount ? 'Paid' : 'Partially Paid';
 
+    // Older invoices only stored a running paid amount. Backfill a receipt on
+    // the issue date the first time a new payment is recorded so the period
+    // revenue math keeps the earlier collection.
+    const existingPayments: InvoicePayment[] =
+      invoice.payments && invoice.payments.length > 0
+        ? invoice.payments
+        : invoice.paidAmount > 0
+          ? [
+              {
+                id: makeId('pmt'),
+                date: invoice.issueDate,
+                amount: Number(invoice.paidAmount.toFixed(2)),
+              },
+            ]
+          : [];
+
+    const payment: InvoicePayment = {
+      id: makeId('pmt'),
+      date: paymentDate,
+      amount: applied,
+    };
+
     setInvoices((prev) =>
       prev.map((inv) =>
-        inv.id === invoiceId ? { ...inv, paidAmount: newPaid, status: newStatus } : inv
+        inv.id === invoiceId
+          ? {
+              ...inv,
+              paidAmount: newPaid,
+              status: newStatus,
+              payments: [...existingPayments, payment],
+            }
+          : inv
       )
     );
 
@@ -789,6 +830,13 @@ export const DairyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const totalLiters = Number(summary.liters.toFixed(2));
     const billingMonth = formatDateRange(from, to);
 
+    // Sales already marked paid when the invoice is generated count as cash
+    // received on the invoice issue date.
+    const initialPayments: InvoicePayment[] =
+      paidAmount > 0
+        ? [{ id: makeId('pmt'), date: issueDate, amount: paidAmount }]
+        : [];
+
     // Reuse an unpaid invoice for the same customer and period so refreshing
     // the sales data does not create duplicate invoices. Invoices that already
     // have payments recorded are left untouched.
@@ -812,6 +860,10 @@ export const DairyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         totalAmount,
         paidAmount,
         status,
+        payments:
+          existingInvoice.payments && existingInvoice.payments.length > 0
+            ? existingInvoice.payments
+            : initialPayments,
       };
       setInvoices((prev) =>
         prev.map((invoice) =>
@@ -836,6 +888,7 @@ export const DairyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       status,
       issueDate,
       dueDate: dueDate.toISOString().slice(0, 10),
+      payments: initialPayments,
     };
     setInvoices((prev) => [newInv, ...prev]);
 
