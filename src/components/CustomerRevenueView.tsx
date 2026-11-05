@@ -88,6 +88,7 @@ export const CustomerRevenueView: React.FC = () => {
     updateCustomer,
     deleteCustomer,
     recordInvoicePayment,
+    setInvoicePayments,
     generateCustomerInvoice
   } = useDairy();
 
@@ -97,6 +98,10 @@ export const CustomerRevenueView: React.FC = () => {
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
   const [paymentDate, setPaymentDate] = useState<string>(todayISO());
   const [collectedBy, setCollectedBy] = useState<string>('');
+  const [collectorInvoice, setCollectorInvoice] = useState<Invoice | null>(null);
+  const [collectorDrafts, setCollectorDrafts] = useState<
+    { id: string; date: string; amount: number; collectedBy: string }[]
+  >([]);
   const [selectedInvoiceToPrint, setSelectedInvoiceToPrint] = useState<Invoice | null>(null);
   const [isGenerateInvoiceOpen, setIsGenerateInvoiceOpen] = useState(false);
   const [selectedCustForInvoice, setSelectedCustForInvoice] = useState(customers[0]?.id || '');
@@ -478,6 +483,52 @@ export const CustomerRevenueView: React.FC = () => {
     setCollectedBy('');
   };
 
+  const openCollectorEditor = (invoice: Invoice) => {
+    const payments =
+      invoice.payments && invoice.payments.length > 0
+        ? invoice.payments
+        : invoice.paidAmount > 0
+          ? [
+              {
+                id: `legacy-${invoice.id}`,
+                date: invoice.issueDate,
+                amount: invoice.paidAmount,
+                collectedBy: '',
+              },
+            ]
+          : [];
+
+    setCollectorInvoice(invoice);
+    setCollectorDrafts(
+      payments.map((payment) => ({
+        id: payment.id,
+        date: payment.date,
+        amount: Number(payment.amount) || 0,
+        collectedBy: payment.collectedBy ?? '',
+      }))
+    );
+  };
+
+  const handleSaveCollectors = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!collectorInvoice) return;
+
+    const stamp = Date.now();
+    setInvoicePayments(
+      collectorInvoice.id,
+      collectorDrafts.map((draft, index) => ({
+        id: draft.id.startsWith('legacy-')
+          ? `pmt-${stamp}-${index}`
+          : draft.id,
+        date: draft.date,
+        amount: draft.amount,
+        collectedBy: draft.collectedBy.trim() || undefined,
+      }))
+    );
+    setCollectorInvoice(null);
+    setCollectorDrafts([]);
+  };
+
   const handleGenerateInvoiceSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCustForInvoice) return;
@@ -683,6 +734,15 @@ export const CustomerRevenueView: React.FC = () => {
                 const balanceRemaining = invoice
                   ? Math.max(0, invoice.totalAmount - invoice.paidAmount)
                   : 0;
+                const collectors = invoice?.payments
+                  ? Array.from(
+                      new Set(
+                        invoice.payments
+                          .map((payment) => payment.collectedBy?.trim())
+                          .filter((name): name is string => Boolean(name))
+                      )
+                    )
+                  : [];
 
                 return (
                   <tr
@@ -805,6 +865,14 @@ export const CustomerRevenueView: React.FC = () => {
                             )}
                             <span>{invoice.status}</span>
                           </span>
+                          {collectors.length > 0 && (
+                            <p
+                              className="mt-1 text-[10px] text-stone-400 truncate max-w-[140px]"
+                              title={`Collected by ${collectors.join(', ')}`}
+                            >
+                              by {collectors.join(', ')}
+                            </p>
+                          )}
                         </>
                       ) : (
                         <span className="text-stone-400">—</span>
@@ -830,6 +898,15 @@ export const CustomerRevenueView: React.FC = () => {
                             className="px-2 py-1 text-[11px] font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded transition-colors cursor-pointer shadow-xs"
                           >
                             Collect
+                          </button>
+                        )}
+                        {invoice && invoice.paidAmount > 0 && (
+                          <button
+                            onClick={() => openCollectorEditor(invoice)}
+                            title="Edit Collected By for recorded payments"
+                            className="p-1 text-stone-500 hover:text-emerald-800 hover:bg-emerald-50 rounded transition-colors cursor-pointer"
+                          >
+                            <Users className="w-4 h-4" />
                           </button>
                         )}
                         {invoice && (
@@ -962,6 +1039,116 @@ export const CustomerRevenueView: React.FC = () => {
                   className="px-4 py-1.5 text-xs font-bold text-white bg-emerald-700 rounded-lg hover:bg-emerald-800 cursor-pointer shadow-xs transition-colors"
                 >
                   Confirm Receipt
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Collected By (old payment receipts) Modal */}
+      {collectorInvoice && (
+        <div className="fixed inset-0 z-50 bg-emerald-950/25 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-xl border border-stone-200">
+            <form onSubmit={handleSaveCollectors}>
+              <div className="p-5 border-b border-stone-200 flex items-center justify-between sticky top-0 bg-white z-10">
+                <div>
+                  <h3 className="text-base font-bold text-stone-900">Edit Collected By</h3>
+                  <p className="text-xs text-stone-500">
+                    {collectorInvoice.customerName} · Invoice {collectorInvoice.id}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCollectorInvoice(null)}
+                  className="p-1.5 text-stone-400 hover:text-stone-700 rounded-lg cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-5 space-y-4">
+                <div className="bg-stone-50 p-3 rounded-lg border border-stone-200 text-xs space-y-1">
+                  <div className="flex justify-between">
+                    <span className="text-stone-500">Total Billed:</span>
+                    <span className="font-mono">{currencySymbol}{collectorInvoice.totalAmount.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-stone-500">Paid to date:</span>
+                    <strong className="font-mono text-emerald-800">
+                      {currencySymbol}{collectorInvoice.paidAmount.toFixed(2)}
+                    </strong>
+                  </div>
+                </div>
+
+                {collectorDrafts.length === 0 ? (
+                  <p className="text-xs text-stone-500">
+                    No payment receipts recorded for this invoice yet.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {collectorDrafts.map((draft, index) => (
+                      <div
+                        key={`${draft.id}-${index}`}
+                        className="rounded-lg border border-stone-200 p-3 space-y-2"
+                      >
+                        <div className="flex items-center justify-between text-[11px] text-stone-500">
+                          <span className="font-mono">{draft.date}</span>
+                          <strong className="font-mono text-stone-900">
+                            {currencySymbol}{draft.amount.toFixed(2)}
+                          </strong>
+                        </div>
+                        <div>
+                          <label className="block text-[11px] text-stone-600 font-semibold mb-1">
+                            Collected By
+                          </label>
+                          <input
+                            type="text"
+                            value={draft.collectedBy}
+                            onChange={(e) =>
+                              setCollectorDrafts((prev) =>
+                                prev.map((entry, entryIndex) =>
+                                  entryIndex === index
+                                    ? { ...entry, collectedBy: e.target.value }
+                                    : entry
+                                )
+                              )
+                            }
+                            placeholder="e.g. Owner, Farm Manager, Delivery Agent"
+                            list="collector-edit-options"
+                            className="w-full px-3 py-2 text-xs rounded-lg border border-stone-300"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                    <datalist id="collector-edit-options">
+                      <option value="Owner" />
+                      <option value="Farm Manager" />
+                      <option value="Accountant" />
+                      <option value="Delivery Agent" />
+                    </datalist>
+                    <p className="text-[10px] text-stone-500">
+                      Older payments without a receipt history appear with the invoice date.
+                      Saving turns them into dated receipts, so dashboard “Collected By”
+                      totals update for the correct period.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="p-4 border-t border-stone-200 bg-stone-50 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCollectorInvoice(null)}
+                  className="px-3.5 py-1.5 text-xs font-semibold text-stone-700 bg-white border border-stone-200 rounded-lg hover:bg-stone-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 text-xs font-bold text-white bg-emerald-700 rounded-lg hover:bg-emerald-800 cursor-pointer shadow-xs transition-colors"
+                >
+                  Save Collectors
                 </button>
               </div>
             </form>

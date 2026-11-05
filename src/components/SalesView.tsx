@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { useDairy } from '../context/DairyContext';
 import {
+  MilkLog,
   MilkSale,
   MilkSaleSession,
 } from '../types/dairy';
@@ -72,10 +73,82 @@ const emptyForm = (date: string): SaleFormData => ({
   notes: '',
 });
 
+/**
+ * Builds editable sale defaults from the milk production logged for a date.
+ * Values are litre-weighted averages across the selected session, and withheld
+ * milk is excluded because it cannot be sold.
+ */
+function productionSaleDefaults(
+  logs: MilkLog[],
+  date: string,
+  session: MilkSaleSession
+): Pick<
+  SaleFormData,
+  'quantityLiters' | 'clr' | 'fatPercentage' | 'snfPercentage'
+> | null {
+  const dayLogs = logs.filter(
+    (log) =>
+      log.date === date &&
+      (session === 'Combined' || log.session === session) &&
+      !log.isWithheld
+  );
+  if (dayLogs.length === 0) return null;
+
+  const totalLiters = dayLogs.reduce(
+    (sum, log) => sum + (Number(log.liters) || 0),
+    0
+  );
+  if (totalLiters <= 0) return null;
+
+  const weightedAverage = (
+    valueOf: (log: MilkLog) => number | undefined,
+    digits: number
+  ) => {
+    let weighted = 0;
+    let weight = 0;
+    for (const log of dayLogs) {
+      const value = valueOf(log);
+      const liters = Number(log.liters) || 0;
+      if (value == null || !Number.isFinite(value) || value <= 0 || liters <= 0) {
+        continue;
+      }
+      weighted += value * liters;
+      weight += liters;
+    }
+    return weight > 0 ? Number((weighted / weight).toFixed(digits)) : undefined;
+  };
+
+  const snfOf = (log: MilkLog) => {
+    const saved = Number(log.snfPercentage);
+    if (Number.isFinite(saved) && saved > 0) return saved;
+    const clr = Number(log.clr);
+    const fat = Number(log.fatPercentage);
+    if (Number.isFinite(clr) && clr > 0 && Number.isFinite(fat) && fat > 0) {
+      return calculateSnf(clr, fat);
+    }
+    return undefined;
+  };
+
+  const clr = weightedAverage(
+    (log) => (typeof log.clr === 'number' ? log.clr : undefined),
+    1
+  );
+  const fat = weightedAverage((log) => Number(log.fatPercentage), 2);
+  const snf = weightedAverage(snfOf, 2);
+
+  return {
+    quantityLiters: Number(totalLiters.toFixed(2)),
+    clr: clr ?? 29.4,
+    fatPercentage: fat ?? 4.2,
+    snfPercentage: snf ?? Number(calculateSnf(clr ?? 29.4, fat ?? 4.2).toFixed(2)),
+  };
+}
+
 export const SalesView: React.FC = () => {
   const {
     sales,
     customers,
+    milkLogs,
     addMilkSale,
     updateMilkSale,
     deleteMilkSale,
@@ -89,6 +162,7 @@ export const SalesView: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSaleId, setEditingSaleId] = useState<string | null>(null);
   const [formData, setFormData] = useState<SaleFormData>(() => emptyForm(selectedDate));
+  const [autoFillNote, setAutoFillNote] = useState('');
 
   const today = todayISO();
   const firstSaleDate = sales.reduce(
@@ -162,6 +236,40 @@ export const SalesView: React.FC = () => {
   const pendingSales = grossSales - paidSales;
   const averageRate = totalLiters > 0 ? grossSales / totalLiters : 0;
 
+  const productionFill = (date: string, session: MilkSaleSession) => {
+    const defaults = productionSaleDefaults(milkLogs, date, session);
+    if (!defaults) return { values: null, note: '' };
+
+    const sessionLabel =
+      session === 'Combined' ? 'combined' : session.toLowerCase();
+    return {
+      values: defaults,
+      note: `${defaults.quantityLiters.toFixed(2)} L · Fat ${defaults.fatPercentage.toFixed(
+        2
+      )}% · SNF ${defaults.snfPercentage.toFixed(2)}% · CLR ${defaults.clr.toFixed(
+        1
+      )} from ${sessionLabel} production on ${date}`,
+    };
+  };
+
+  const handleSaleDateChange = (date: string) => {
+    const { values, note } = productionFill(date, formData.session);
+    setAutoFillNote(note);
+    setFormData({ ...formData, date, ...(values ?? {}) });
+  };
+
+  const handleSessionChange = (session: MilkSaleSession) => {
+    const { values, note } = productionFill(formData.date, session);
+    setAutoFillNote(note);
+    setFormData({ ...formData, session, ...(values ?? {}) });
+  };
+
+  const handleRefreshFromProduction = () => {
+    const { values, note } = productionFill(formData.date, formData.session);
+    setAutoFillNote(note);
+    if (values) setFormData({ ...formData, ...values });
+  };
+
   const handleOpenAdd = () => {
     const defaultBuyer =
       customers.find((customer) => customer.status === 'Active') ?? customers[0];
@@ -170,10 +278,13 @@ export const SalesView: React.FC = () => {
       defaultBuyer?.milkBaseRate != null && defaultBuyer.milkBaseRate > 0
         ? defaultBuyer.milkBaseRate
         : nextForm.baseRate;
+    const { values, note } = productionFill(nextForm.date, nextForm.session);
 
     setEditingSaleId(null);
+    setAutoFillNote(note);
     setFormData({
       ...nextForm,
+      ...(values ?? {}),
       buyerId: defaultBuyer?.id ?? '',
       buyerName: defaultBuyer?.name ?? '',
       baseRate: defaultBaseRate,
@@ -266,6 +377,7 @@ export const SalesView: React.FC = () => {
       Math.abs(savedRate - qualityRate) > 0.005;
 
     setEditingSaleId(sale.id);
+    setAutoFillNote('');
     setFormData({
       date: sale.date,
       buyerId: linkedBuyer?.id ?? '',
@@ -698,7 +810,7 @@ export const SalesView: React.FC = () => {
                       type="date"
                       required
                       value={formData.date}
-                      onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                      onChange={(e) => handleSaleDateChange(e.target.value)}
                       className="w-full px-3 py-2 rounded-lg border border-neutral-300 bg-white text-neutral-800 focus:outline-hidden focus:border-emerald-600 cursor-pointer"
                     />
                   </div>
@@ -708,10 +820,7 @@ export const SalesView: React.FC = () => {
                     <select
                       value={formData.session}
                       onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          session: e.target.value as MilkSaleSession,
-                        })
+                        handleSessionChange(e.target.value as MilkSaleSession)
                       }
                       className="w-full px-3 py-2 rounded-lg border border-neutral-300 bg-white"
                     >
@@ -855,6 +964,32 @@ export const SalesView: React.FC = () => {
                     />
                   </div>
                 </div>
+
+                {!editingSaleId && (
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50/60 px-2.5 py-1.5">
+                    <p className="text-[10px] text-emerald-900">
+                      {autoFillNote ? (
+                        <>
+                          <span className="font-semibold">Prefilled from milk production</span>{' '}
+                          — {autoFillNote}. Every value stays editable, and withheld
+                          milk is excluded.
+                        </>
+                      ) : (
+                        <>
+                          No usable milk production found for this date/session.
+                          Enter the sale values manually.
+                        </>
+                      )}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleRefreshFromProduction}
+                      className="shrink-0 text-[10px] font-bold text-emerald-800 hover:text-emerald-950 underline cursor-pointer"
+                    >
+                      Refresh from production
+                    </button>
+                  </div>
+                )}
 
                 <p className="text-[10px] text-neutral-400">
                   SNF is calculated automatically from CLR and butterfat. You

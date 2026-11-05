@@ -110,6 +110,8 @@ interface DairyContextType {
     paymentDate?: string,
     collectedBy?: string
   ) => void;
+  /** Replace an invoice's dated payment receipts (used to correct collectors). */
+  setInvoicePayments: (invoiceId: string, payments: InvoicePayment[]) => void;
   generateCustomerInvoice: (customerId: string, from: string, to: string) => boolean;
 
   // Expenses actions
@@ -803,6 +805,50 @@ export const DairyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     );
   };
 
+  const setInvoicePayments = (invoiceId: string, payments: InvoicePayment[]) => {
+    setInvoices((prev) =>
+      prev.map((invoice) => {
+        if (invoice.id !== invoiceId) return invoice;
+
+        // Never wipe money already recorded when an invoice has no receipt
+        // history yet; empty lists simply leave the running paid amount alone.
+        if (payments.length === 0) {
+          return {
+            ...invoice,
+            status:
+              invoice.paidAmount >= invoice.totalAmount
+                ? 'Paid'
+                : invoice.paidAmount > 0
+                  ? 'Partially Paid'
+                  : 'Pending',
+          };
+        }
+
+        const paidAmount = Math.min(
+          invoice.totalAmount,
+          Number(
+            payments
+              .reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0)
+              .toFixed(2)
+          )
+        );
+        const status: Invoice['status'] =
+          paidAmount >= invoice.totalAmount
+            ? 'Paid'
+            : paidAmount > 0
+              ? 'Partially Paid'
+              : 'Pending';
+
+        return {
+          ...invoice,
+          paidAmount,
+          status,
+          payments,
+        };
+      })
+    );
+  };
+
   const generateCustomerInvoice = (
     customerId: string,
     from: string,
@@ -1147,6 +1193,7 @@ export const DairyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         updateSupplyLogQuantity,
         markAllDeliveriesDelivered,
         recordInvoicePayment,
+        setInvoicePayments,
         generateCustomerInvoice,
         addExpense,
         updateExpense,
