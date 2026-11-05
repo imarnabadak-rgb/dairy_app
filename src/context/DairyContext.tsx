@@ -104,7 +104,12 @@ interface DairyContextType {
   markAllDeliveriesDelivered: () => void;
 
   // Invoices & Billing
-  recordInvoicePayment: (invoiceId: string, amount: number, paymentDate?: string) => void;
+  recordInvoicePayment: (
+    invoiceId: string,
+    amount: number,
+    paymentDate?: string,
+    collectedBy?: string
+  ) => void;
   generateCustomerInvoice: (customerId: string, from: string, to: string) => boolean;
 
   // Expenses actions
@@ -713,7 +718,8 @@ export const DairyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const recordInvoicePayment = (
     invoiceId: string,
     amount: number,
-    paymentDateInput?: string
+    paymentDateInput?: string,
+    collectedByInput?: string
   ) => {
     const invoice = invoices.find((inv) => inv.id === invoiceId);
     if (!invoice || amount <= 0) return;
@@ -752,6 +758,7 @@ export const DairyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       id: makeId('pmt'),
       date: paymentDate,
       amount: applied,
+      collectedBy: collectedByInput?.trim() || undefined,
     };
 
     setInvoices((prev) =>

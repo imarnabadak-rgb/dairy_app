@@ -555,7 +555,7 @@ export function buildDashboardReportCsv(input: DashboardReportInput): string {
 
   addSection(
     'Expense Details',
-    ['Date', 'Title', 'Category', 'Cattle', 'Amount', 'Vendor', 'Payment Method', 'Receipt Number', 'Notes'],
+    ['Date', 'Title', 'Category', 'Cattle', 'Amount', 'Vendor', 'Payment Method', 'Paid By', 'Receipt Number', 'Notes'],
     data.sortedExpenses.map((expense) => [
       expense.date,
       expense.title,
@@ -564,6 +564,7 @@ export function buildDashboardReportCsv(input: DashboardReportInput): string {
       number(expense.amount),
       expense.vendor,
       expense.paymentMethod,
+      expense.paidBy ?? '',
       expense.receiptNumber ?? '',
       expense.notes ?? '',
     ])

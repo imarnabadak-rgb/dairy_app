@@ -66,6 +66,7 @@ export const ExpensesView: React.FC = () => {
     date: string;
     vendor: string;
     paymentMethod: FarmExpense['paymentMethod'];
+    paidBy: string;
     receiptNumber: string;
     notes: string;
     cattleId: string;
@@ -76,6 +77,7 @@ export const ExpensesView: React.FC = () => {
     date: selectedDate,
     vendor: '',
     paymentMethod: 'Bank Transfer',
+    paidBy: '',
     receiptNumber: '',
     notes: '',
     cattleId: ''
@@ -189,6 +191,7 @@ export const ExpensesView: React.FC = () => {
     const matchesSearch =
       e.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       e.vendor.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (e.paidBy && e.paidBy.toLowerCase().includes(searchQuery.toLowerCase())) ||
       (e.receiptNumber && e.receiptNumber.toLowerCase().includes(searchQuery.toLowerCase()));
     return matchesCategory && matchesSearch;
   });
@@ -207,6 +210,7 @@ export const ExpensesView: React.FC = () => {
       date: selectedDate,
       vendor: '',
       paymentMethod: 'Bank Transfer',
+      paidBy: '',
       receiptNumber: `REC-${Date.now().toString().slice(-4)}`,
       notes: '',
       cattleId: ''
@@ -232,6 +236,7 @@ export const ExpensesView: React.FC = () => {
       date: expense.date,
       vendor: expense.vendor,
       paymentMethod: expense.paymentMethod,
+      paidBy: expense.paidBy ?? '',
       receiptNumber: expense.receiptNumber ?? '',
       notes: expense.notes ?? '',
       cattleId: linkedCattle
@@ -262,6 +267,7 @@ export const ExpensesView: React.FC = () => {
       date: formData.date,
       vendor: formData.vendor.trim() || 'General Farm Supplier',
       paymentMethod: formData.paymentMethod,
+      paidBy: formData.paidBy.trim() || undefined,
       receiptNumber: formData.receiptNumber.trim() || undefined,
       notes: formData.notes.trim() || undefined,
       cattleId,
@@ -547,6 +553,11 @@ export const ExpensesView: React.FC = () => {
                       <CreditCard className="w-3 h-3 text-neutral-500" />
                       <span>{exp.paymentMethod}</span>
                     </span>
+                    {exp.paidBy && (
+                      <p className="text-[10px] text-neutral-500 mt-1">
+                        Paid by <span className="font-semibold text-neutral-700">{exp.paidBy}</span>
+                      </p>
+                    )}
                   </td>
 
                   <td className="py-3 px-4 font-mono text-neutral-500 text-[11px]">
@@ -728,6 +739,24 @@ export const ExpensesView: React.FC = () => {
                       <option value="Card / UPI">Card / UPI / Online</option>
                       <option value="Cash">Cash on Delivery</option>
                     </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-neutral-700 font-semibold mb-1">Paid By</label>
+                    <input
+                      type="text"
+                      value={formData.paidBy}
+                      onChange={(e) => setFormData({ ...formData, paidBy: e.target.value })}
+                      placeholder="e.g. Owner, Farm Manager, Ramesh"
+                      list="expense-paid-by-options"
+                      className="w-full px-3 py-2 rounded-lg border border-neutral-300"
+                    />
+                    <datalist id="expense-paid-by-options">
+                      <option value="Owner" />
+                      <option value="Farm Manager" />
+                      <option value="Accountant" />
+                      <option value="Cashier" />
+                    </datalist>
                   </div>
 
                   <div>

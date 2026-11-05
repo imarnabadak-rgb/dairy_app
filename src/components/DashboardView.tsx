@@ -235,12 +235,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       return recordedPayments.map((payment) => ({
         date: payment.date,
         amount: Number(payment.amount) || 0,
+        collectedBy: payment.collectedBy,
         invoice,
       }));
     }
     const paidAmount = Number(invoice.paidAmount) || 0;
     if (paidAmount > 0) {
-      return [{ date: invoice.issueDate, amount: paidAmount, invoice }];
+      return [{ date: invoice.issueDate, amount: paidAmount, collectedBy: undefined, invoice }];
     }
     // An invoice may still be marked unpaid while one of its source sales was
     // settled directly. Fall back to those sale dates so the cash is not lost.
@@ -250,6 +251,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       .map((sale) => ({
         date: sale.date,
         amount: Number(sale.totalAmount) || 0,
+        collectedBy: undefined,
         invoice,
       }));
   });
@@ -288,6 +290,35 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const periodExpenses = expenses.filter((e) => isInPeriod(e.date));
   const periodTotalExpenses = periodExpenses.reduce((acc, curr) => acc + curr.amount, 0);
+
+  // Who paid farm expenses and who collected milk payments in this period.
+  const paidByTotals = (() => {
+    const totals = new Map<string, number>();
+    for (const expense of periodExpenses) {
+      const name = (expense.paidBy ?? '').trim() || 'Unassigned';
+      totals.set(name, (totals.get(name) ?? 0) + Number(expense.amount || 0));
+    }
+    return Array.from(totals.entries())
+      .map(([name, amount]) => ({ name, amount }))
+      .sort((a, b) => b.amount - a.amount);
+  })();
+
+  const collectedByTotals = (() => {
+    const totals = new Map<string, number>();
+    for (const payment of invoicePaymentEvents) {
+      if (!isInPeriod(payment.date)) continue;
+      const name = (payment.collectedBy ?? '').trim() || 'Unassigned';
+      totals.set(name, (totals.get(name) ?? 0) + payment.amount);
+    }
+    if (directPaidSalesValue > 0) {
+      const label = 'Direct milk sales (no collector)';
+      totals.set(label, (totals.get(label) ?? 0) + directPaidSalesValue);
+    }
+    return Array.from(totals.entries())
+      .map(([name, amount]) => ({ name, amount }))
+      .sort((a, b) => b.amount - a.amount);
+  })();
+
   const totalFeedStockKg = feeds.reduce((acc, feed) => acc + feed.stockKg, 0);
 
   // Operating net profit on cash received during the selected period.
@@ -771,6 +802,79 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 {netOperatingProfit >= 0 ? 'Healthy Margin' : 'Operating Loss'}
               </span>
             </div>
+          </div>
+        </div>
+
+        {/* Paid & Collected By */}
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="p-4 rounded-xl bg-emerald-50/40 border border-emerald-200">
+            <div className="flex items-center justify-between gap-2 text-xs font-semibold text-emerald-900 mb-2">
+              <span className="inline-flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+                Collected By
+                <span className="font-normal text-[10px] text-emerald-700/80">(milk payments)</span>
+              </span>
+              <span className="font-mono tabular-nums text-emerald-900">
+                {currencySymbol}{periodRevenueCollected.toFixed(2)}
+              </span>
+            </div>
+            <div className="space-y-1">
+              {collectedByTotals.length === 0 ? (
+                <p className="text-[11px] text-neutral-500">
+                  No milk payments collected in this period.
+                </p>
+              ) : (
+                collectedByTotals.map((row) => (
+                  <div
+                    key={row.name}
+                    className="flex items-center justify-between gap-2 text-[11px]"
+                  >
+                    <span className="truncate text-neutral-700">{row.name}</span>
+                    <strong className="font-mono tabular-nums text-neutral-900">
+                      {currencySymbol}{row.amount.toFixed(2)}
+                    </strong>
+                  </div>
+                ))
+              )}
+            </div>
+            <p className="text-[10px] text-neutral-500 mt-2">
+              Based on the “Collected By” name entered with each payment receipt.
+            </p>
+          </div>
+
+          <div className="p-4 rounded-xl bg-neutral-50 border border-neutral-200">
+            <div className="flex items-center justify-between gap-2 text-xs font-semibold text-neutral-700 mb-2">
+              <span className="inline-flex items-center gap-1.5">
+                <Receipt className="w-4 h-4 text-neutral-500" />
+                Paid By
+                <span className="font-normal text-[10px] text-neutral-500">(farm expenses)</span>
+              </span>
+              <span className="font-mono tabular-nums text-neutral-900">
+                {currencySymbol}{periodTotalExpenses.toFixed(2)}
+              </span>
+            </div>
+            <div className="space-y-1">
+              {paidByTotals.length === 0 ? (
+                <p className="text-[11px] text-neutral-500">
+                  No farm expenses paid in this period.
+                </p>
+              ) : (
+                paidByTotals.map((row) => (
+                  <div
+                    key={row.name}
+                    className="flex items-center justify-between gap-2 text-[11px]"
+                  >
+                    <span className="truncate text-neutral-700">{row.name}</span>
+                    <strong className="font-mono tabular-nums text-neutral-900">
+                      {currencySymbol}{row.amount.toFixed(2)}
+                    </strong>
+                  </div>
+                ))
+              )}
+            </div>
+            <p className="text-[10px] text-neutral-500 mt-2">
+              Based on the “Paid By” name entered in each expense voucher.
+            </p>
           </div>
         </div>
       </div>

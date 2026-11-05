@@ -96,6 +96,7 @@ export const CustomerRevenueView: React.FC = () => {
   const [selectedInvoiceForPayment, setSelectedInvoiceForPayment] = useState<Invoice | null>(null);
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
   const [paymentDate, setPaymentDate] = useState<string>(todayISO());
+  const [collectedBy, setCollectedBy] = useState<string>('');
   const [selectedInvoiceToPrint, setSelectedInvoiceToPrint] = useState<Invoice | null>(null);
   const [isGenerateInvoiceOpen, setIsGenerateInvoiceOpen] = useState(false);
   const [selectedCustForInvoice, setSelectedCustForInvoice] = useState(customers[0]?.id || '');
@@ -465,10 +466,16 @@ export const CustomerRevenueView: React.FC = () => {
     e.preventDefault();
     if (!selectedInvoiceForPayment || paymentAmount <= 0) return;
 
-    recordInvoicePayment(selectedInvoiceForPayment.id, paymentAmount, paymentDate);
+    recordInvoicePayment(
+      selectedInvoiceForPayment.id,
+      paymentAmount,
+      paymentDate,
+      collectedBy
+    );
     setSelectedInvoiceForPayment(null);
     setPaymentAmount(0);
     setPaymentDate(todayISO());
+    setCollectedBy('');
   };
 
   const handleGenerateInvoiceSubmit = (e: React.FormEvent) => {
@@ -818,6 +825,7 @@ export const CustomerRevenueView: React.FC = () => {
                               setSelectedInvoiceForPayment(invoice);
                               setPaymentAmount(balanceRemaining);
                               setPaymentDate(todayISO());
+                              setCollectedBy('');
                             }}
                             className="px-2 py-1 text-[11px] font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded transition-colors cursor-pointer shadow-xs"
                           >
@@ -920,6 +928,24 @@ export const CustomerRevenueView: React.FC = () => {
                   <p className="text-[10px] text-stone-500 mt-1">
                     Cash is counted in the dashboard period that contains this date.
                   </p>
+                </div>
+
+                <div>
+                  <label className="block text-stone-700 font-semibold mb-1">Collected By</label>
+                  <input
+                    type="text"
+                    value={collectedBy}
+                    onChange={(e) => setCollectedBy(e.target.value)}
+                    placeholder="e.g. Owner, Farm Manager, Delivery Agent"
+                    list="invoice-collected-by-options"
+                    className="w-full px-3 py-2 rounded-lg border border-stone-300"
+                  />
+                  <datalist id="invoice-collected-by-options">
+                    <option value="Owner" />
+                    <option value="Farm Manager" />
+                    <option value="Accountant" />
+                    <option value="Delivery Agent" />
+                  </datalist>
                 </div>
               </div>
 

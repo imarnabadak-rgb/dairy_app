@@ -116,6 +116,8 @@ export interface InvoicePayment {
   /** Date the payment was received (YYYY-MM-DD). */
   date: string;
   amount: number;
+  /** Person who collected the payment (e.g. Owner, Delivery Agent). */
+  collectedBy?: string;
 }
 
 export interface Invoice {
@@ -199,6 +201,8 @@ export interface FarmExpense {
   amount: number;
   vendor: string;
   paymentMethod: 'Cash' | 'Bank Transfer' | 'Card / UPI';
+  /** Person or account that settled the expense (e.g. Owner, Farm Manager). */
+  paidBy?: string;
   receiptNumber?: string;
   notes?: string;
   /** Cattle linked to a veterinary expense. `combined` means the whole herd. */
