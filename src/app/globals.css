@@ -17,6 +17,12 @@
   }
 }
 
+/* Receipts are laid out for A4 paper when printed from the browser. */
+@page {
+  size: A4 portrait;
+  margin: 12mm;
+}
+
 /* Custom subtle scrollbars */
 ::-webkit-scrollbar {
   width: 6px;

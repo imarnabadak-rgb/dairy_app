@@ -10,6 +10,7 @@ import {
 } from '../lib/dashboard-report';
 import { downloadDashboardReportPdf } from '../lib/dashboard-report-pdf';
 import { getInvoiceSales } from '../lib/sales/ledger';
+import type { Invoice } from '../types/dairy';
 import {
   addMonthsISO,
   endOfMonthISO,
@@ -223,37 +224,97 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     .filter((s) => s.paymentStatus === 'Paid')
     .reduce((acc, curr) => acc + curr.totalAmount, 0);
   const periodInvoices = invoices.filter((inv) => isInPeriod(inv.issueDate));
-  const periodInvoicedRevenue = periodInvoices.reduce((acc, curr) => acc + curr.totalAmount, 0);
+  const invoiceLiveTotal = (invoice: Invoice) => {
+    const customer = customers.find((entry) => entry.id === invoice.customerId);
+    const coveredSales = getInvoiceSales(invoice, customer, sales);
+    const liveTotal = coveredSales.reduce(
+      (sum, sale) => sum + (Number(sale.totalAmount) || 0),
+      0
+    );
+    return coveredSales.length > 0 && liveTotal > 0
+      ? Number(liveTotal.toFixed(2))
+      : Number(invoice.totalAmount) || 0;
+  };
+  const periodInvoicedRevenue = periodInvoices.reduce(
+    (acc, curr) => acc + invoiceLiveTotal(curr),
+    0
+  );
 
   // Cash-basis revenue: money actually received in the selected period.
   // Invoices recorded before this period still count when their payment was
   // collected now. Legacy invoices without dated payments fall back to the
   // invoice issue date.
   const invoicePaymentEvents = invoices.flatMap((invoice) => {
+    const customer = customers.find((entry) => entry.id === invoice.customerId);
+    const coveredSales = getInvoiceSales(invoice, customer, sales);
+    const paidCoveredSales = coveredSales
+      .filter((sale) => sale.paymentStatus === 'Paid')
+      .reduce((sum, sale) => sum + (Number(sale.totalAmount) || 0), 0);
+
     const recordedPayments = invoice.payments ?? [];
+    let baseEvents: {
+      date: string;
+      amount: number;
+      collectedBy?: string;
+      invoice: typeof invoice;
+    }[];
+
     if (recordedPayments.length > 0) {
-      return recordedPayments.map((payment) => ({
+      baseEvents = recordedPayments.map((payment) => ({
         date: payment.date,
         amount: Number(payment.amount) || 0,
         collectedBy: payment.collectedBy,
         invoice,
       }));
+    } else {
+      const paidAmount = Number(invoice.paidAmount) || 0;
+      if (paidAmount > 0) {
+        baseEvents = [
+          {
+            date: invoice.issueDate,
+            amount: paidAmount,
+            collectedBy: undefined,
+            invoice,
+          },
+        ];
+      } else {
+        // An invoice may still be marked unpaid while one of its source sales
+        // was settled directly. Fall back to those sale dates so the cash is
+        // not lost.
+        baseEvents = coveredSales
+          .filter((sale) => sale.paymentStatus === 'Paid')
+          .map((sale) => ({
+            date: sale.date,
+            amount: Number(sale.totalAmount) || 0,
+            collectedBy: undefined,
+            invoice,
+          }));
+      }
     }
-    const paidAmount = Number(invoice.paidAmount) || 0;
-    if (paidAmount > 0) {
-      return [{ date: invoice.issueDate, amount: paidAmount, collectedBy: undefined, invoice }];
-    }
-    // An invoice may still be marked unpaid while one of its source sales was
-    // settled directly. Fall back to those sale dates so the cash is not lost.
-    const customer = customers.find((entry) => entry.id === invoice.customerId);
-    return getInvoiceSales(invoice, customer, sales)
-      .filter((sale) => sale.paymentStatus === 'Paid')
-      .map((sale) => ({
-        date: sale.date,
-        amount: Number(sale.totalAmount) || 0,
-        collectedBy: undefined,
+
+    // Sales linked to an invoice can be edited or added after the invoice was
+    // issued. When all of them are marked paid, the recorded receipts may be
+    // lower than the live paid-sales value. Count the difference once, on the
+    // invoice date, so collected revenue still matches the customer ledger.
+    const recordedTotal = baseEvents.reduce((sum, event) => sum + event.amount, 0);
+    const unrecordedPaidSales = paidCoveredSales - recordedTotal;
+    if (unrecordedPaidSales <= 0.005) return baseEvents;
+
+    const collector =
+      [...recordedPayments]
+        .reverse()
+        .find((payment) => payment.collectedBy?.trim())?.collectedBy ??
+      baseEvents[baseEvents.length - 1]?.collectedBy;
+
+    return [
+      ...baseEvents,
+      {
+        date: invoice.issueDate,
+        amount: Number(unrecordedPaidSales.toFixed(2)),
+        collectedBy: collector,
         invoice,
-      }));
+      },
+    ];
   });
   const periodInvoiceCollections = invoicePaymentEvents
     .filter((payment) => isInPeriod(payment.date))
